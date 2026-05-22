@@ -7,6 +7,7 @@ TIMEFRAMES = {
     "H1": mt5.TIMEFRAME_H1
 }
 
+
 class MT5Client:
 
     @staticmethod
@@ -35,7 +36,7 @@ class MT5Client:
             "last": tick.last,
             "time": tick.time
         }
-    
+
     @staticmethod
     def get_rates(symbol: str, timeframe, count: int):
 
@@ -62,4 +63,68 @@ class MT5Client:
                 "tick_volume": int(rate["tick_volume"])
             })
 
-        return candles    
+        return candles
+
+    @staticmethod
+    def place_order(
+        symbol: str,
+        order_type: str,
+        volume: float,
+        stop_loss: float,
+        take_profit: float
+    ):
+
+        tick = mt5.symbol_info_tick(symbol)
+
+        if tick is None:
+            return {
+                "success": False,
+                "message": "Symbol tick not found"
+            }
+
+        if order_type == "BUY":
+            price = tick.ask
+            mt5_type = mt5.ORDER_TYPE_BUY
+
+        else:
+            price = tick.bid
+            mt5_type = mt5.ORDER_TYPE_SELL
+
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(volume),
+            "type": mt5_type,
+            "price": float(price),
+            "sl": float(stop_loss),
+            "tp": float(take_profit),
+            "deviation": 20,
+            "magic": 777,
+            "comment": "SPX500 BOT",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_FOK
+        }
+
+        result = mt5.order_send(request)
+        
+        print(result)
+
+        if result is None:
+            return {
+                "success": False,
+                "message": "Order send failed"
+            }
+
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+
+            return {
+                "success": False,
+                "message": f"MT5 Error: {result.retcode}",
+                "retcode": result.retcode,
+                "comment": result.comment
+            }
+        return {
+            "success": True,
+            "orderId": result.order or result.deal
+        }

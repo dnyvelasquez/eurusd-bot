@@ -1,83 +1,42 @@
-import { Candle }
-  from "../../services/mt5/mt5.types";
+import { EventEmitter } from 'events';
 
-import { LiquidityLevel }
-  from "./liquidity.types";
+import { LiquidityClustering } from './liquidity-clustering';
+import { LiquiditySweepDetector } from './liquidity-sweep-detector';
+import {
+  LiquidityCluster,
+  LiquidityLevel,
+  LiquiditySweep,
+} from './liquidity-types';
 
-export class LiquidityEngine {
+export class LiquidityEngine extends EventEmitter {
+  private readonly clustering = new LiquidityClustering();
 
-  detectLiquidity(
-    candles: Candle[]
-  ): LiquidityLevel[] {
+  private readonly sweepDetector = new LiquiditySweepDetector();
 
-    const levels:
-      LiquidityLevel[] = [];
+  private levels: LiquidityLevel[] = [];
 
-    const threshold =
-      1.0;
+  private clusters: LiquidityCluster[] = [];
 
-    for (
-      let i = 0;
-      i < candles.length;
-      i++
-    ) {
+  addLevels(levels: LiquidityLevel[]) {
+    this.levels = levels;
 
-      for (
-        let j = i + 1;
-        j < candles.length;
-        j++
-      ) {
+    this.clusters = this.clustering.cluster(levels);
 
-        const highDiff =
+    this.emit('clustersUpdated', this.clusters);
+  }
 
-          Math.abs(
-            candles[i].high -
-            candles[j].high
-          );
+  analyzeCandle(candle: any) {
+    const sweeps = this.sweepDetector.detect(
+      this.clusters,
+      candle,
+    );
 
-        const lowDiff =
-
-          Math.abs(
-            candles[i].low -
-            candles[j].low
-          );
-
-        if (
-          highDiff <= threshold
-        ) {
-
-          levels.push({
-            price:
-              candles[i].high,
-
-            type: "EQH",
-
-            touches: 2,
-
-            firstTouchTime:
-              candles[i].time
-          });
-        }
-
-        if (
-          lowDiff <= threshold
-        ) {
-
-          levels.push({
-            price:
-              candles[i].low,
-
-            type: "EQL",
-
-            touches: 2,
-
-            firstTouchTime:
-              candles[i].time
-          });
-        }
-      }
+    for (const sweep of sweeps) {
+      this.emit('liquiditySweep', sweep);
     }
+  }
 
-    return levels;
+  getClusters() {
+    return this.clusters;
   }
 }

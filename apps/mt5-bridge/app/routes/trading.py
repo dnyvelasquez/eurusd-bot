@@ -4,6 +4,7 @@ from app.core.mt5_client import TIMEFRAMES
 
 router = APIRouter()
 
+
 @router.get("/health")
 def health():
 
@@ -13,6 +14,7 @@ def health():
         "success": connected,
         "mt5_connected": connected
     }
+
 
 @router.get("/tick/{symbol}")
 def get_tick(symbol: str):
@@ -38,6 +40,7 @@ def get_tick(symbol: str):
         "symbol": symbol,
         "data": tick
     }
+
 
 @router.get("/candles/{symbol}/{timeframe}")
 def get_candles(
@@ -75,3 +78,60 @@ def get_candles(
         "count": count,
         "data": candles
     }
+
+
+@router.post("/trade")
+def place_trade(order: dict):
+
+    try:
+
+        connected = MT5Client.connect()
+
+        if not connected:
+            return {
+                "success": False,
+                "message": "MT5 not connected"
+            }
+
+        print("ORDER RECEIVED:", order)
+
+        result = MT5Client.place_order(
+            symbol=order["symbol"],
+            order_type=order["side"],
+            volume=order["volume"],
+            stop_loss=order["stopLoss"],
+            take_profit=order["takeProfit"]
+        )
+
+        print("RESULT:", result)
+
+        return result
+
+    except Exception as e:
+
+        print("ERROR:", str(e))
+
+        return {
+            "success": False,
+            "message": str(e)
+        }
+    
+
+    
+    connected = MT5Client.connect()
+
+    if not connected:
+        return {
+            "success": False,
+            "message": "MT5 not connected"
+        }
+
+    result = MT5Client.place_order(
+        symbol=order["symbol"],
+        order_type=order["side"],
+        volume=order["volume"],
+        stop_loss=order["stopLoss"],
+        take_profit=order["takeProfit"]
+    )
+
+    return result
