@@ -33,7 +33,8 @@ Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Mone
 │    ├─ SessionGuard           (horarios bloqueados en ET) │
 │    ├─ DailyDrawdownGuard     (límite % pérdida diaria)   │
 │    ├─ DailyProfitTargetGuard (objetivo % ganancia diaria)│
-│    └─ WeeklyDrawdownGuard    (límite % pérdida semanal)  │
+│    ├─ WeeklyDrawdownGuard    (límite % pérdida semanal)  │
+│    └─ DailyTradeCountGuard   (máximo trades por día)     │
 │                                                          │
 │  TradeJournalService  (registro de operaciones en DB)    │
 │  BotStatusService     (semáforo en tiempo real)          │
@@ -67,6 +68,7 @@ Antes de ejecutar cualquier orden, el bot pasa por cuatro filtros en este orden:
 | **Daily drawdown** | Si la pérdida del día supera `MAX_DAILY_DRAWDOWN_PERCENT` (default 3%), no se abren más posiciones hasta el día siguiente. |
 | **Daily profit target** | Si la ganancia del día supera `MAX_DAILY_PROFIT_PERCENT` (default 3%), no se abren más posiciones. Protege las ganancias. |
 | **Weekly drawdown** | Si la pérdida de la semana supera `MAX_WEEKLY_DRAWDOWN_PERCENT` (default 5%), no se abren posiciones hasta el lunes siguiente. Referencia se resetea cada lunes. |
+| **Daily trade limit** | Si el número de trades del día alcanza `MAX_DAILY_TRADES`, no se abren más posiciones. `0` = sin límite (default). Se resetea automáticamente a medianoche UTC. |
 | **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (default 30) entre señales del mismo tipo para evitar sobreoperación. |
 
 ### Ventanas bloqueadas por defecto (hora ET)
@@ -106,7 +108,7 @@ El tamaño de posición se calcula en base al riesgo porcentual del balance y se
 El bridge incluye un dashboard en `http://localhost:8000` con las siguientes secciones:
 
 - **Estado** — balance, equity y conexión MT5
-- **Configuración** — editar símbolo, riesgo, modo live, cooldown, límites de pérdida diaria/semanal y objetivo de ganancia diaria — cada campo muestra una barra de progreso indicando qué tan cerca está del límite (verde → amarillo → rojo). Toggle de Telegram. Hot-reload sin reiniciar el bot.
+- **Configuración** — editar símbolo, riesgo, modo live, cooldown, límites de pérdida diaria/semanal/semanal y objetivo de ganancia diaria — cada campo con barra de progreso (verde → amarillo → rojo). Máximo de trades diarios con gauge. Toggles de TPs parciales y confirmación M15. Filtro de tamaño mínimo de FVG. Hot-reload sin reiniciar el bot.
 - **Licencia** — visualizar y validar la clave de licencia
 - **Telegram** — configurar token y chat ID, botón de prueba de envío
 
@@ -114,7 +116,7 @@ El bridge incluye un dashboard en `http://localhost:8000` con las siguientes sec
 
 Los cambios guardados desde el dashboard se escriben en `config.json` en la raíz. El bot detecta el cambio automáticamente (sin reiniciar) vía `fs.watch`. Los parámetros con soporte hot-reload son:
 
-`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `MAX_DAILY_PROFIT_PERCENT`, `MAX_WEEKLY_DRAWDOWN_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
+`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `MAX_DAILY_PROFIT_PERCENT`, `MAX_WEEKLY_DRAWDOWN_PERCENT`, `MAX_DAILY_TRADES`, `MIN_FVG_POINTS`, `PARTIAL_TP_ENABLED`, `M15_CONFIRMATION_ENABLED`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
 
 ## Stack tecnológico
 
@@ -219,6 +221,7 @@ npm run lint         # ESLint
 | GET | `/api/trading/candles/{symbol}/{timeframe}` | Velas históricas |
 | GET | `/api/trading/positions/{symbol}` | Posiciones abiertas |
 | PATCH | `/api/trading/positions/{ticket}` | Modificar SL/TP |
+| POST | `/api/trading/positions/{ticket}/partial-close` | Cierre parcial de posición (TPs parciales) |
 | POST | `/api/trading/trade` | Colocar orden |
 | GET | `/api/settings` | Leer configuración actual |
 | PUT | `/api/settings` | Actualizar configuración |
@@ -242,16 +245,25 @@ npm run lint         # ESLint
 | Orden ejecutada | ✅ Orden colocada con ID y niveles |
 | Orden fallida | ❌ Error con razón de MT5 |
 | Break-even | 🔒 SL movido a precio de entrada |
+| Partial TP | 📊 50% cerrado con precio y SL movido a BE |
 | Trailing stop | 📈 SL actualizado |
 | Bridge caído | 🔌 Bridge MT5 desconectado |
 | Bridge recuperado | ✅ Bridge MT5 reconectado |
+
+## Filtros de estrategia (opcionales)
+
+| Filtro | Parámetro | Comportamiento |
+|---|---|---|
+| **Tamaño mínimo de FVG** | `MIN_FVG_POINTS` | Ignora FVGs cuyo gap sea menor al valor en puntos. `0` = desactivado. |
+| **Confirmación M15** | `M15_CONFIRMATION_ENABLED` | Exige que el sesgo en M15 (calculado con BiasEngine) esté alineado con el sesgo H1 antes de entrar. Reduce falsos setups. |
 
 ## Gestión de posiciones
 
 Una vez abierta una posición, el bot la monitorea en cada ciclo de sync (10s):
 
-- **Break-even** — cuando el precio se mueve 1R a favor, el SL se mueve al precio de entrada (operación sin riesgo)
-- **Trailing stop** — cuando el precio se mueve 2R a favor, el SL sigue al precio manteniéndose a 1R de distancia
+- **Break-even** — cuando el precio se mueve 1R a favor, el SL se mueve al precio de entrada (operación sin riesgo). Solo cuando `PARTIAL_TP_ENABLED=false`.
+- **Partial TP** (opcional) — cuando `PARTIAL_TP_ENABLED=true` y el precio se mueve 1R a favor: se cierra el 50% de la posición y el SL se mueve a break-even. El 50% restante sigue corriendo.
+- **Trailing stop** — cuando el precio se mueve 2R a favor, el SL sigue al precio manteniéndose a 1R de distancia.
 
 ## Semáforo de estado del bot
 
@@ -310,6 +322,10 @@ npm test
 | `MAX_DAILY_DRAWDOWN_PERCENT` | % máximo de pérdida diaria permitida | `3` |
 | `MAX_DAILY_PROFIT_PERCENT` | % objetivo de ganancia diaria (para al alcanzarlo) | `3` |
 | `MAX_WEEKLY_DRAWDOWN_PERCENT` | % máximo de pérdida semanal permitida (resetea el lunes) | `5` |
+| `MAX_DAILY_TRADES` | Máximo de trades por día (`0` = sin límite) | `0` |
+| `MIN_FVG_POINTS` | Tamaño mínimo del FVG en puntos para aceptar la entrada (`0` = sin filtro) | `0` |
+| `PARTIAL_TP_ENABLED` | `true` para cerrar 50% en 1R y dejar correr el resto | `false` |
+| `M15_CONFIRMATION_ENABLED` | `true` para exigir sesgo M15 alineado con H1 antes de entrar | `false` |
 | `TELEGRAM_ENABLED` | `false` para silenciar notificaciones | `true` |
 | `LICENSE_KEY` | UUID de licencia (también editable en dashboard) | — |
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram | — |

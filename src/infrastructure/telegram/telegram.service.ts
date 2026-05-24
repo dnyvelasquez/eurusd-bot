@@ -134,4 +134,13 @@ export class TelegramService {
   async notifyBridgeRecovered(): Promise<void> {
     await this.send(`✅ <b>Bridge MT5 reconectado</b>`);
   }
+
+  async notifyPartialTP(params: { ticket: number; symbol: string; volume: number; price: number }): Promise<void> {
+    await this.send(
+      `📊 <b>Partial TP ejecutado</b>\n` +
+      `Ticket: <code>${params.ticket}</code> — ${params.symbol}\n` +
+      `Cerrado: ${params.volume} lotes @ <code>${params.price.toFixed(2)}</code>\n` +
+      `SL movido a break-even`,
+    );
+  }
 }

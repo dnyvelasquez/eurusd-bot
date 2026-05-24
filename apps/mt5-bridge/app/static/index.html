@@ -545,6 +545,46 @@
   </div>
 
   <div class="field">
+    <label for="max-daily-trades">Máximo de trades diarios <span style="color:var(--muted);font-weight:400">(0 = sin límite)</span></label>
+    <div class="limit-row">
+      <input type="number" id="max-daily-trades" min="0" max="50" step="1" />
+      <div class="gauge-wrap">
+        <div class="gauge-track"><div class="gauge-fill" id="gf-trades"></div></div>
+        <span class="gauge-lbl" id="gl-trades">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-title" style="margin-top:24px;margin-bottom:16px">Estrategia</div>
+
+  <div class="field">
+    <label>TPs parciales</label>
+    <div class="toggle-row">
+      <span class="toggle-label">Cerrar 50% en 1R y dejar correr el resto</span>
+      <label class="toggle">
+        <input type="checkbox" id="partial-tp" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="min-fvg-points">Tamaño mínimo de FVG (puntos) <span style="color:var(--muted);font-weight:400">(0 = sin filtro)</span></label>
+    <input type="number" id="min-fvg-points" min="0" max="500" step="0.5" />
+  </div>
+
+  <div class="field">
+    <label>Confirmación M15</label>
+    <div class="toggle-row">
+      <span class="toggle-label">Exigir sesgo M15 alineado con H1</span>
+      <label class="toggle">
+        <input type="checkbox" id="m15-confirm" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="field">
     <label>Modo de trading</label>
     <div class="toggle-row">
       <span class="toggle-label" id="live-label">Paper (sin órdenes reales)</span>
@@ -651,7 +691,7 @@
     setTimeout(() => { el.className = ''; }, 3000);
   }
 
-  // ── Gauge helper ──────────────────────────────────────────────────────────
+  // ── Gauge helpers ─────────────────────────────────────────────────────────
   function updateGauge(id, current, max) {
     const fill  = $(`gf-${id}`);
     const label = $(`gl-${id}`);
@@ -660,6 +700,17 @@
     fill.style.width = `${pct}%`;
     fill.style.background = pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)';
     label.textContent = `${current.toFixed(1)}% de ${max}%`;
+  }
+
+  function updateTradesGauge(count, max) {
+    const fill  = $('gf-trades');
+    const label = $('gl-trades');
+    if (!fill || !label) return;
+    if (max === 0) { fill.style.width = '0%'; label.textContent = 'Sin límite'; return; }
+    const pct = Math.min(100, (count / max) * 100);
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)';
+    label.textContent = `${count} de ${max} trades`;
   }
 
   // ── Bot trading status ────────────────────────────────────────────────────
@@ -683,6 +734,7 @@
         updateGauge('drawdown', d.metrics.dailyDrawdownPct,  d.metrics.maxDailyDrawdown);
         updateGauge('profit',   d.metrics.dailyProfitPct,    d.metrics.maxDailyProfit);
         updateGauge('weekly',   d.metrics.weeklyDrawdownPct, d.metrics.maxWeeklyDrawdown);
+        updateTradesGauge(d.metrics.dailyTrades ?? 0, d.metrics.maxDailyTrades ?? 0);
       }
 
       if (d.ready) {
@@ -741,6 +793,10 @@
     $('max-drawdown').value        = cfg.MAX_DAILY_DRAWDOWN_PERCENT ?? 3;
     $('max-profit').value          = cfg.MAX_DAILY_PROFIT_PERCENT ?? 3;
     $('max-weekly-drawdown').value = cfg.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5;
+    $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
+    $('min-fvg-points').value      = cfg.MIN_FVG_POINTS ?? 0;
+    $('partial-tp').checked        = cfg.PARTIAL_TP_ENABLED === true;
+    $('m15-confirm').checked       = cfg.M15_CONFIRMATION_ENABLED === true;
 
     const live = cfg.LIVE_TRADING === true;
     $('live-trading').checked = live;
@@ -763,9 +819,13 @@
       RISK_PERCENT:                parseFloat($('risk').value),
       LIVE_TRADING:                $('live-trading').checked,
       SIGNAL_COOLDOWN_MINUTES:     parseInt($('cooldown').value, 10),
-      MAX_DAILY_DRAWDOWN_PERCENT:   parseFloat($('max-drawdown').value),
-      MAX_DAILY_PROFIT_PERCENT:     parseFloat($('max-profit').value),
-      MAX_WEEKLY_DRAWDOWN_PERCENT:  parseFloat($('max-weekly-drawdown').value),
+      MAX_DAILY_DRAWDOWN_PERCENT:  parseFloat($('max-drawdown').value),
+      MAX_DAILY_PROFIT_PERCENT:    parseFloat($('max-profit').value),
+      MAX_WEEKLY_DRAWDOWN_PERCENT: parseFloat($('max-weekly-drawdown').value),
+      MAX_DAILY_TRADES:            parseInt($('max-daily-trades').value, 10) || 0,
+      MIN_FVG_POINTS:              parseFloat($('min-fvg-points').value) || 0,
+      PARTIAL_TP_ENABLED:          $('partial-tp').checked,
+      M15_CONFIRMATION_ENABLED:    $('m15-confirm').checked,
     };
 
     if (!payload.SYMBOL) { toast('El símbolo no puede estar vacío', 'err'); return; }
@@ -792,7 +852,7 @@
       const r = await fetch(`${API}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, LICENSE_KEY: original.LICENSE_KEY ?? '', TELEGRAM_ENABLED: original.TELEGRAM_ENABLED ?? true }),
+        body: JSON.stringify({ ...payload, LICENSE_KEY: original.LICENSE_KEY ?? '', TELEGRAM_ENABLED: original.TELEGRAM_ENABLED ?? true, BLOCKED_HOURS: original.BLOCKED_HOURS ?? [] }),
       });
 
       if (!r.ok) {

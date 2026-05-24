@@ -24,6 +24,10 @@ interface BotConfig {
   BLOCKED_HOURS?: BlockedWindow[];
   MAX_DAILY_PROFIT_PERCENT?: number;
   MAX_WEEKLY_DRAWDOWN_PERCENT?: number;
+  MAX_DAILY_TRADES?: number;
+  MIN_FVG_POINTS?: number;
+  PARTIAL_TP_ENABLED?: boolean;
+  M15_CONFIRMATION_ENABLED?: boolean;
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
@@ -46,6 +50,10 @@ class ConfigService {
   get blockedHours(): BlockedWindow[] { return this.config.BLOCKED_HOURS ?? DEFAULT_BLOCKED_HOURS; }
   get maxDailyProfitPercent(): number { return this.config.MAX_DAILY_PROFIT_PERCENT ?? 3; }
   get maxWeeklyDrawdownPercent(): number { return this.config.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5; }
+  get maxDailyTrades(): number { return this.config.MAX_DAILY_TRADES ?? 0; }
+  get minFvgPoints(): number { return this.config.MIN_FVG_POINTS ?? 0; }
+  get partialTpEnabled(): boolean { return this.config.PARTIAL_TP_ENABLED ?? false; }
+  get m15ConfirmationEnabled(): boolean { return this.config.M15_CONFIRMATION_ENABLED ?? false; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env
   get licenseKey(): string | undefined {

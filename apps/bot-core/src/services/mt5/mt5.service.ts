@@ -7,6 +7,7 @@ import {
   PositionsResponse,
   ModifyPositionResponse,
   PositionHistoryResponse,
+  PartialCloseResponse,
 } from "./mt5.types";
 
 export class MT5Service {
@@ -72,6 +73,14 @@ export class MT5Service {
   async getPositionHistory(ticket: number): Promise<PositionHistoryResponse> {
     const response = await axios.get<PositionHistoryResponse>(
       `${this.baseUrl}/history/${ticket}`
+    );
+    return response.data;
+  }
+
+  async partialClose(ticket: number, volume: number, symbol: string): Promise<PartialCloseResponse> {
+    const response = await axios.post<PartialCloseResponse>(
+      `${this.baseUrl}/positions/${ticket}/partial-close`,
+      { volume, symbol },
     );
     return response.data;
   }

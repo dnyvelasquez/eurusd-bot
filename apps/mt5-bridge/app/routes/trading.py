@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
 from app.core.mt5_client import MT5Client
 from app.core.mt5_client import TIMEFRAMES
 
@@ -143,6 +144,19 @@ def modify_position(ticket: int, body: dict):
     )
 
     return result
+
+
+class PartialCloseBody(BaseModel):
+    volume: float
+    symbol: str
+
+
+@router.post("/positions/{ticket}/partial-close")
+def partial_close_position(ticket: int, body: PartialCloseBody):
+    connected = MT5Client.connect()
+    if not connected:
+        return {"success": False, "message": "MT5 not connected"}
+    return MT5Client.partial_close_position(ticket, body.volume, body.symbol)
 
 
 @router.get("/history/{ticket}")

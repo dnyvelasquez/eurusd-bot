@@ -8,6 +8,8 @@ export interface BotStatusMetrics {
   maxDailyDrawdown: number;
   maxDailyProfit: number;
   maxWeeklyDrawdown: number;
+  dailyTrades: number;
+  maxDailyTrades: number;
 }
 
 export interface BotStatus {

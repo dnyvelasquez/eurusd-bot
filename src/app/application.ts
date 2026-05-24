@@ -5,6 +5,7 @@ import { NewsFilterService } from '@infra/news/news-filter.service';
 import { DailyDrawdownGuard } from '@infra/risk/daily-drawdown.guard';
 import { DailyProfitTargetGuard } from '@infra/risk/daily-profit-target.guard';
 import { WeeklyDrawdownGuard } from '@infra/risk/weekly-drawdown.guard';
+import { DailyTradeCountGuard } from '@infra/risk/daily-trade-count.guard';
 import { SessionGuard } from '@infra/session/session-guard';
 import { TradeJournalService } from '@infra/journal/trade-journal.service';
 import { BotStatusService } from '@infra/status/bot-status.service';
@@ -55,6 +56,7 @@ export class Application {
   private readonly drawdownGuard = new DailyDrawdownGuard();
   private readonly profitTargetGuard = new DailyProfitTargetGuard();
   private readonly weeklyDrawdownGuard = new WeeklyDrawdownGuard();
+  private readonly dailyTradeCountGuard = new DailyTradeCountGuard();
   private readonly sessionGuard = new SessionGuard();
   private readonly journal = new TradeJournalService();
   private readonly statusService = new BotStatusService();
@@ -192,6 +194,8 @@ export class Application {
       maxDailyDrawdown:  configService.maxDailyDrawdownPercent,
       maxDailyProfit:    configService.maxDailyProfitPercent,
       maxWeeklyDrawdown: configService.maxWeeklyDrawdownPercent,
+      dailyTrades:       this.dailyTradeCountGuard.tradeCount(),
+      maxDailyTrades:    configService.maxDailyTrades,
     };
 
     const write = (ready: boolean, reason: string | null) =>
@@ -221,6 +225,11 @@ export class Application {
         write(false, `Límite de pérdida semanal (${metrics.weeklyDrawdownPct.toFixed(1)}% / ${metrics.maxWeeklyDrawdown}%)`);
         return;
       }
+    }
+
+    if (this.dailyTradeCountGuard.isBreached(configService.maxDailyTrades)) {
+      write(false, `Máximo de trades diarios (${metrics.dailyTrades}/${metrics.maxDailyTrades})`);
+      return;
     }
 
     const cooldownMs = configService.signalCooldownMinutes * 60_000;
@@ -280,9 +289,27 @@ export class Application {
       const currentPrice =
         position.type === 'BUY' ? tickResponse.data.bid : tickResponse.data.ask;
 
-      const action = this.positionMonitor.check(position, currentPrice);
+      const action = this.positionMonitor.check(position, currentPrice, configService.partialTpEnabled);
 
       if (!action) continue;
+
+      // Partial TP: cerrar 50% y mover SL a break-even
+      if (action.reason === 'PARTIAL_TP' && action.partialVolume !== undefined) {
+        const closeResult = await this.mt5.partialClose(action.ticket, action.partialVolume, action.symbol);
+        if (!closeResult.success) {
+          logger.error({ ticket: action.ticket, reason: closeResult.message }, 'Partial close failed');
+          continue;
+        }
+        await this.mt5.modifyPosition(action.ticket, action.symbol, action.newSL, action.keepTP);
+        logger.info({ ticket: action.ticket, volume: action.partialVolume, newSL: action.newSL }, 'Partial TP executed');
+        await this.telegramService.notifyPartialTP({
+          ticket: action.ticket,
+          symbol: action.symbol,
+          volume: action.partialVolume,
+          price: currentPrice,
+        });
+        continue;
+      }
 
       const result = await this.mt5.modifyPosition(
         action.ticket,
@@ -315,6 +342,7 @@ export class Application {
   }
 
   private async onPositionClosed(ticket: number): Promise<void> {
+    this.positionMonitor.clearTicket(ticket);
     try {
       const history = await this.mt5.getPositionHistory(ticket);
       if (history.success && history.data) {
@@ -391,6 +419,16 @@ export class Application {
       return;
     }
 
+    // ── 3b. Confirmación M15 (opcional) ─────────────────────────────────────
+    if (configService.m15ConfirmationEnabled) {
+      const m15Candles = this.marketData.getCandles(symbol, 'M15');
+      const m15Bias = this.biasEngine.analyze(m15Candles);
+      if (m15Bias !== htfBias) {
+        logger.debug({ htfBias, m15Bias }, 'Signal skipped — M15 bias not aligned with H1');
+        return;
+      }
+    }
+
     const mssDirection = mss.direction;
     const sweepDirection = sweep.direction === 'bullish' ? 'BULLISH' : 'BEARISH';
 
@@ -402,6 +440,15 @@ export class Application {
       mssDirection === 'BULLISH'
         ? this.fvgDetector.detectBullish(recentM5)
         : this.fvgDetector.detectBearish(recentM5);
+
+    // Filtro de tamaño de FVG
+    if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) {
+      logger.debug(
+        { fvgSize: fvg.size.toFixed(2), min: configService.minFvgPoints },
+        'Signal skipped — FVG too small',
+      );
+      return;
+    }
 
     const displacement = this.displacementDetector.detect(lastM5);
 
@@ -488,6 +535,14 @@ export class Application {
       return;
     }
 
+    if (this.dailyTradeCountGuard.isBreached(configService.maxDailyTrades)) {
+      logger.info(
+        { count: this.dailyTradeCountGuard.tradeCount(), max: configService.maxDailyTrades },
+        'Signal skipped — daily trade limit reached',
+      );
+      return;
+    }
+
     const sizing = this.positionSizing.calculate({
       accountBalance: balance,
       riskPercent: configService.riskPercent,
@@ -552,6 +607,7 @@ export class Application {
     if (result.success) {
       logger.info({ orderId: result.orderId }, 'Order placed successfully');
       await this.telegramService.notifyOrderPlaced({ ...notifParams, orderId: result.orderId });
+      this.dailyTradeCountGuard.increment();
 
       if (result.orderId !== undefined) {
         this.openPositionTickets.add(result.orderId);

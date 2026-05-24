@@ -67,6 +67,10 @@ class BotSettings(BaseModel):
     BLOCKED_HOURS: List[BlockedWindow] = Field(default_factory=lambda: [BlockedWindow(**{"from": w["from"], "to": w["to"], "label": w["label"]}) for w in DEFAULT_BLOCKED_HOURS])
     MAX_DAILY_PROFIT_PERCENT: float = Field(default=3.0, ge=0.5, le=20.0)
     MAX_WEEKLY_DRAWDOWN_PERCENT: float = Field(default=5.0, ge=0.5, le=30.0)
+    MAX_DAILY_TRADES: int = Field(default=0, ge=0, le=50)
+    MIN_FVG_POINTS: float = Field(default=0.0, ge=0.0, le=500.0)
+    PARTIAL_TP_ENABLED: bool = Field(default=False)
+    M15_CONFIRMATION_ENABLED: bool = Field(default=False)
 
 
 def _read_config() -> BotSettings:

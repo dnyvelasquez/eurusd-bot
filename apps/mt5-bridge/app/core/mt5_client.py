@@ -157,6 +157,49 @@ class MT5Client:
         }
 
     @staticmethod
+    def partial_close_position(ticket: int, volume: float, symbol: str):
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            return {"success": False, "message": f"No open positions for {symbol}"}
+
+        pos = next((p for p in positions if p.ticket == ticket), None)
+        if pos is None:
+            return {"success": False, "message": f"Position {ticket} not found"}
+
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return {"success": False, "message": "Symbol tick not found"}
+
+        if pos.type == mt5.ORDER_TYPE_BUY:
+            close_type = mt5.ORDER_TYPE_SELL
+            price = tick.bid
+        else:
+            close_type = mt5.ORDER_TYPE_BUY
+            price = tick.ask
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(volume),
+            "type": close_type,
+            "position": ticket,
+            "price": float(price),
+            "deviation": 20,
+            "magic": 777,
+            "comment": "SPX500 BOT partial TP",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_FOK,
+        }
+
+        result = mt5.order_send(request)
+        if result is None:
+            return {"success": False, "message": "Partial close failed"}
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            return {"success": False, "message": f"MT5 Error: {result.retcode}", "retcode": result.retcode}
+
+        return {"success": True}
+
+    @staticmethod
     def place_order(
         symbol: str,
         order_type: str,

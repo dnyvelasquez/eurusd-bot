@@ -76,3 +76,8 @@ export interface PositionHistoryResponse {
   data?: PositionHistoryData;
   message?: string;
 }
+
+export interface PartialCloseResponse {
+  success: boolean;
+  message?: string;
+}
