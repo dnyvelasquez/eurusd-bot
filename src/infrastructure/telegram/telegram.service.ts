@@ -1,6 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 
 import { env } from '@config/env';
+import { configService } from '@config/config-service';
 import { logger } from '@infra/logger/logger';
 
 export class TelegramService {
@@ -22,6 +23,7 @@ export class TelegramService {
 
   private async send(html: string): Promise<void> {
     if (!env.TELEGRAM_CHAT_ID) return;
+    if (!configService.telegramEnabled) return;
 
     try {
       await this.bot.sendMessage(env.TELEGRAM_CHAT_ID, html, {

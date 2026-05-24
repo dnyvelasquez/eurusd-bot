@@ -27,6 +27,7 @@ class BotSettings(BaseModel):
     RISK_PERCENT: float = Field(default=1.0, ge=0.1, le=10.0)
     LIVE_TRADING: bool = Field(default=False)
     SIGNAL_COOLDOWN_MINUTES: int = Field(default=30, ge=1, le=1440)
+    TELEGRAM_ENABLED: bool = Field(default=True)
     LICENSE_KEY: str = Field(default="")
 
 
