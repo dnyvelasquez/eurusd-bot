@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -7,6 +8,7 @@ from pydantic import BaseModel, Field
 router = APIRouter()
 
 CONFIG_PATH = (Path(__file__).parent / ".." / ".." / ".." / ".." / "config.json").resolve()
+LICENSE_CACHE_PATH = (Path(__file__).parent / ".." / ".." / ".." / ".." / "license-cache.json").resolve()
 
 
 class BotSettings(BaseModel):
@@ -36,3 +38,23 @@ def update_settings(payload: BotSettings):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return payload
+
+
+class LicenseInfo(BaseModel):
+    owner_name: str
+    mt5_account: int
+    trade_mode: str
+    allowed_mode: str
+    active: bool
+    expires_at: Optional[str] = None
+    validated_at: str
+
+
+@router.get("/license", response_model=LicenseInfo)
+def get_license():
+    if not LICENSE_CACHE_PATH.exists():
+        raise HTTPException(status_code=404, detail="License not validated yet — start the bot first")
+    try:
+        return LicenseInfo(**json.loads(LICENSE_CACHE_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

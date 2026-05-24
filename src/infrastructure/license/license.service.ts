@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import postgres from 'postgres';
 
 import { logger } from '@infra/logger/logger';
@@ -11,6 +14,8 @@ export interface LicenseRecord {
   expires_at: string | null;
 }
 
+const CACHE_PATH = path.resolve(__dirname, '..', '..', '..', 'license-cache.json');
+
 export class LicenseService {
   private readonly configured: boolean;
 
@@ -18,10 +23,6 @@ export class LicenseService {
     this.configured = !!(env.DATABASE_URL && env.LICENSE_KEY);
   }
 
-  /**
-   * Valida la licencia contra Neon (PostgreSQL).
-   * Si DATABASE_URL / LICENSE_KEY no están en el .env, omite la validación (modo dev).
-   */
   async validate(mt5Login: number, tradeMode: 'DEMO' | 'CONTEST' | 'REAL'): Promise<void> {
     if (!this.configured) {
       logger.warn('License validation skipped — DATABASE_URL / LICENSE_KEY not set');
@@ -40,15 +41,11 @@ export class LicenseService {
         LIMIT 1
       `;
 
-      if (!rows.length) {
-        throw new Error('License key not found');
-      }
+      if (!rows.length) throw new Error('License key not found');
 
       const license = rows[0];
 
-      if (!license.active) {
-        throw new Error('License is inactive — contact the administrator');
-      }
+      if (!license.active) throw new Error('License is inactive — contact the administrator');
 
       if (license.expires_at && new Date(license.expires_at) < new Date()) {
         throw new Error(`License expired on ${license.expires_at}`);
@@ -66,8 +63,31 @@ export class LicenseService {
         { owner: license.owner_name, login: mt5Login, mode: license.allowed_mode },
         'License valid',
       );
+
+      this.writeCache(license, mt5Login, tradeMode);
     } finally {
       await sql.end();
+    }
+  }
+
+  private writeCache(
+    license: LicenseRecord,
+    mt5Login: number,
+    tradeMode: string,
+  ): void {
+    try {
+      const cache = {
+        owner_name: license.owner_name,
+        mt5_account: mt5Login,
+        trade_mode: tradeMode,
+        allowed_mode: license.allowed_mode,
+        active: license.active,
+        expires_at: license.expires_at,
+        validated_at: new Date().toISOString(),
+      };
+      fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2));
+    } catch {
+      // no bloquear el arranque si falla la escritura del cache
     }
   }
 
