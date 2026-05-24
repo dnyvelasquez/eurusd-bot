@@ -311,6 +311,19 @@
     }
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* Settings top row — symbol, risk, cooldown */
+    .fields-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .fields-row .field {
+      flex: 1;
+      margin-bottom: 0;
+      min-width: 0;
+    }
+
     /* Limit gauges */
     .limit-row {
       display: flex;
@@ -487,19 +500,19 @@
 <div class="card">
   <div class="card-title">Configuración</div>
 
-  <div class="field">
-    <label for="symbol">Símbolo (MT5)</label>
-    <input type="text" id="symbol" placeholder="US500" autocomplete="off" />
-  </div>
-
-  <div class="field">
-    <label for="risk">Riesgo por operación (%)</label>
-    <input type="number" id="risk" min="0.1" max="10" step="0.1" />
-  </div>
-
-  <div class="field">
-    <label for="cooldown">Cooldown entre señales (minutos)</label>
-    <input type="number" id="cooldown" min="1" max="1440" step="1" />
+  <div class="fields-row">
+    <div class="field">
+      <label for="symbol">Símbolo (MT5)</label>
+      <input type="text" id="symbol" placeholder="US500" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="risk">Riesgo (%)</label>
+      <input type="number" id="risk" min="0.1" max="10" step="0.1" />
+    </div>
+    <div class="field">
+      <label for="cooldown">Cooldown (min)</label>
+      <input type="number" id="cooldown" min="1" max="1440" step="1" />
+    </div>
   </div>
 
   <div class="field">
