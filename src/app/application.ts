@@ -1,6 +1,7 @@
 import { logger } from '@infra/logger/logger';
 import { TelegramService } from '@infra/telegram/telegram.service';
 import { LicenseService } from '@infra/license/license.service';
+import { NewsFilterService } from '@infra/news/news-filter.service';
 
 import { env } from '@config/env';
 import { configService } from '@config/config-service';
@@ -44,6 +45,7 @@ export class Application {
   private readonly positionMonitor = new PositionMonitor();
 
   private readonly licenseService = new LicenseService();
+  private readonly newsFilter = new NewsFilterService();
   private pollTimer: NodeJS.Timeout | null = null;
   private readonly lastSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
   private bridgeDown = false;
@@ -60,6 +62,8 @@ export class Application {
     logger.info('Application starting...');
 
     await this.validateLicense();
+
+    await this.newsFilter.initialize();
 
     await this.telegramService.initialize();
 
@@ -220,6 +224,16 @@ export class Application {
   private async onMssConfirmed(sweep: LiquiditySweep, mss: MSS): Promise<void> {
     logger.info({ direction: mss.direction, brokenPrice: mss.brokenPrice }, 'MSS confirmed');
 
+    // ── 0. Filtro de noticias ─────────────────────────────────────────────────
+    if (this.newsFilter.isBlocked()) {
+      const next = this.newsFilter.nextBlockedEvent();
+      logger.info(
+        { event: next?.title, time: next?.date.toISOString() },
+        'Signal skipped — news blackout window (±1 min USD high-impact event)',
+      );
+      return;
+    }
+
     const symbol = configService.symbol;
     const h1Candles = this.marketData.getCandles(symbol, 'H1');
     const m5Candles = this.marketData.getCandles(symbol, 'M5');
@@ -229,7 +243,7 @@ export class Application {
       return;
     }
 
-    // ── 0. Posiciones abiertas ────────────────────────────────────────────────
+    // ── 1. Posiciones abiertas ────────────────────────────────────────────────
     const positionsResponse = await this.mt5.getPositions(symbol);
 
     if (!positionsResponse.success) {
@@ -247,7 +261,7 @@ export class Application {
       return;
     }
 
-    // ── 1. Cooldown ───────────────────────────────────────────────────────────
+    // ── 2. Cooldown ───────────────────────────────────────────────────────────
     const cooldownMs = configService.signalCooldownMinutes * 60_000;
     const lastSignal = this.lastSignalTime.get(mss.direction) ?? 0;
     const elapsed = Date.now() - lastSignal;
@@ -258,7 +272,7 @@ export class Application {
       return;
     }
 
-    // ── 1. Sesgo HTF ──────────────────────────────────────────────────────────
+    // ── 3. Sesgo HTF ──────────────────────────────────────────────────────────
     const htfBias = this.biasEngine.analyze(h1Candles);
 
     if (htfBias === 'RANGE') {
@@ -269,7 +283,7 @@ export class Application {
     const mssDirection = mss.direction;
     const sweepDirection = sweep.direction === 'bullish' ? 'BULLISH' : 'BEARISH';
 
-    // ── 2. FVG y desplazamiento en M5 ────────────────────────────────────────
+    // ── 4. FVG y desplazamiento en M5 ────────────────────────────────────────
     const recentM5 = m5Candles.slice(-3);
     const lastM5 = m5Candles[m5Candles.length - 1];
 
@@ -280,7 +294,7 @@ export class Application {
 
     const displacement = this.displacementDetector.detect(lastM5);
 
-    // ── 3. Validación de condiciones de entrada ───────────────────────────────
+    // ── 5. Validación de condiciones de entrada ───────────────────────────────
     const valid = this.entryValidator.validate({
       htfBias,
       sweepDirection,
@@ -297,7 +311,7 @@ export class Application {
       return;
     }
 
-    // ── 4. Niveles de precio ──────────────────────────────────────────────────
+    // ── 6. Niveles de precio ──────────────────────────────────────────────────
     // Entrada: midpoint del FVG si existe, de lo contrario cierre de la última vela M5
     const entryPrice = fvg
       ? (fvg.startPrice + fvg.endPrice) / 2
@@ -319,7 +333,7 @@ export class Application {
         ? entryPrice + slDistance * 2
         : entryPrice - slDistance * 2;
 
-    // ── 5. Balance y sizing ───────────────────────────────────────────────────
+    // ── 7. Balance y sizing ───────────────────────────────────────────────────
     const accountResponse = await this.mt5.getAccount();
 
     if (!accountResponse.success || !accountResponse.data) {
@@ -347,7 +361,7 @@ export class Application {
       Math.max(MIN_VOLUME, Math.round(sizing.positionSize * 100) / 100),
     );
 
-    // ── 6. Ejecución ──────────────────────────────────────────────────────────
+    // ── 8. Ejecución ──────────────────────────────────────────────────────────
     const order = {
       symbol,
       side: mssDirection === 'BULLISH' ? ('BUY' as const) : ('SELL' as const),
@@ -408,5 +422,6 @@ export class Application {
     }
 
     configService.stop();
+    this.newsFilter.stop();
   }
 }
