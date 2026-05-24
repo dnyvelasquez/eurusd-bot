@@ -1,6 +1,6 @@
 # SPX500 Bot
 
-Bot de trading algorítmico para el S&P 500 (US500) basado en conceptos ICT / Smart Money. Analiza el mercado en tiempo real, detecta setups de alta probabilidad y ejecuta órdenes automáticamente a través de MetaTrader 5.
+Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Money. Analiza el mercado en tiempo real, detecta setups de alta probabilidad y ejecuta órdenes automáticamente a través de MetaTrader 5.
 
 ## Arquitectura
 
@@ -12,6 +12,8 @@ Bot de trading algorítmico para el S&P 500 (US500) basado en conceptos ICT / Sm
 ┌──────────────────────▼──────────────────────────────────┐
 │              mt5-bridge  (Python / FastAPI)              │
 │  /health  /account  /candles  /positions  /trade        │
+│  /settings  /license  /telegram                         │
+│  Dashboard web  →  http://localhost:8000                 │
 └──────────────────────┬──────────────────────────────────┘
                        │ HTTP
 ┌──────────────────────▼──────────────────────────────────┐
@@ -25,6 +27,10 @@ Bot de trading algorítmico para el S&P 500 (US500) basado en conceptos ICT / Sm
 │    ├─ EntryValidator   (5 condiciones ICT)               │
 │    ├─ PositionSizing   (riesgo % del balance)            │
 │    └─ PositionMonitor  (break-even + trailing stop)      │
+│                                                          │
+│  Filtros de riesgo (se evalúan antes de cada orden)      │
+│    ├─ NewsFilterService   (bloqueo ±1 min noticias USD)  │
+│    └─ DailyDrawdownGuard  (límite % pérdida diaria)      │
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
@@ -44,6 +50,41 @@ El bot requiere **5 condiciones simultáneas** antes de abrir una posición:
 
 La entrada se coloca en el midpoint del FVG (o al precio de mercado si no hay FVG). El SL va más allá del extremo de la vela del sweep y el TP garantiza mínimo 2:1 R:R.
 
+## Filtros de riesgo
+
+Antes de ejecutar cualquier orden, el bot pasa por tres filtros en este orden:
+
+| Filtro | Comportamiento |
+|---|---|
+| **News filter** | Bloquea señales ±1 minuto alrededor de noticias USD de alto impacto (Forex Factory). Se refresca cada día a medianoche UTC. |
+| **Daily drawdown** | Si la pérdida del día supera `MAX_DAILY_DRAWDOWN_PERCENT` (default 3%), no se abren más posiciones hasta el día siguiente. |
+| **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (default 30) entre señales del mismo tipo para evitar sobreoperación. |
+
+## Gestión de lotaje
+
+| Parámetro | Valor |
+|---|---|
+| Lotaje mínimo | 0.1 lotes |
+| Lotaje máximo | 20.0 lotes |
+| Incremento | 0.1 lotes (1 decimal) |
+
+El tamaño de posición se calcula en base al riesgo porcentual del balance y se redondea al múltiplo de 0.1 más cercano dentro del rango permitido.
+
+## Dashboard web
+
+El bridge incluye un dashboard en `http://localhost:8000` con las siguientes secciones:
+
+- **Estado** — balance, equity y conexión MT5
+- **Configuración** — editar símbolo, riesgo, modo live, cooldown, drawdown máximo y toggle de Telegram (con hot-reload sin reiniciar el bot)
+- **Licencia** — visualizar y validar la clave de licencia
+- **Telegram** — configurar token y chat ID, botón de prueba de envío
+
+## Hot-reload de configuración
+
+Los cambios guardados desde el dashboard se escriben en `config.json` en la raíz. El bot detecta el cambio automáticamente (sin reiniciar) vía `fs.watch`. Los parámetros con soporte hot-reload son:
+
+`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`
+
 ## Stack tecnológico
 
 | Capa | Tecnología |
@@ -52,6 +93,7 @@ La entrada se coloca en el midpoint del FVG (o al precio de mercado si no hay FV
 | Bridge MT5 | Python, FastAPI, uvicorn |
 | Broker | MetaTrader 5 |
 | Notificaciones | Telegram Bot API |
+| Licencias | Neon PostgreSQL |
 | Validación | Zod (TS), Pydantic (Python) |
 | Logger | Pino |
 | Tests | Vitest |
@@ -96,6 +138,10 @@ RISK_PERCENT=1
 LIVE_TRADING=false
 
 SIGNAL_COOLDOWN_MINUTES=30
+
+LICENSE_KEY=tu-uuid-de-licencia
+
+DATABASE_URL=postgresql://...
 ```
 
 > Para obtener tu `TELEGRAM_CHAT_ID`: envía un mensaje al bot y visita
@@ -105,7 +151,7 @@ SIGNAL_COOLDOWN_MINUTES=30
 
 ## Inicio
 
-**1. Abrir MetaTrader 5** con la cuenta activa y `US500` visible en el Market Watch.
+**1. Abrir MetaTrader 5** con la cuenta activa y `SPX500` visible en el Market Watch.
 
 **2. Arrancar el bridge** (terminal 1):
 ```bash
@@ -118,6 +164,8 @@ uvicorn app.main:app --reload
 ```bash
 npm run dev
 ```
+
+El dashboard queda disponible en `http://localhost:8000`.
 
 ## Scripts disponibles
 
@@ -141,6 +189,13 @@ npm run lint         # ESLint
 | GET | `/api/trading/positions/{symbol}` | Posiciones abiertas |
 | PATCH | `/api/trading/positions/{ticket}` | Modificar SL/TP |
 | POST | `/api/trading/trade` | Colocar orden |
+| GET | `/api/settings` | Leer configuración actual |
+| PUT | `/api/settings` | Actualizar configuración |
+| GET | `/api/license` | Leer licencia cacheada |
+| POST | `/api/license/validate` | Validar clave de licencia |
+| GET | `/api/telegram` | Leer credenciales Telegram |
+| PUT | `/api/telegram` | Actualizar credenciales Telegram |
+| POST | `/api/telegram/test` | Enviar mensaje de prueba |
 
 ## Notificaciones Telegram
 
@@ -181,9 +236,13 @@ npm test
 
 | Variable | Descripción | Default |
 |---|---|---|
-| `SYMBOL` | Símbolo en MT5 | `US500` |
+| `SYMBOL` | Símbolo en MT5 | `SPX500` |
 | `RISK_PERCENT` | % del balance a arriesgar por trade | `1` |
 | `LIVE_TRADING` | `true` para ejecutar órdenes reales | `false` |
 | `SIGNAL_COOLDOWN_MINUTES` | Minutos entre señales del mismo tipo | `30` |
+| `MAX_DAILY_DRAWDOWN_PERCENT` | % máximo de pérdida diaria permitida | `3` |
+| `TELEGRAM_ENABLED` | `false` para silenciar notificaciones | `true` |
+| `LICENSE_KEY` | UUID de licencia (también editable en dashboard) | — |
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram | — |
 | `TELEGRAM_CHAT_ID` | Chat ID para notificaciones | — |
+| `DATABASE_URL` | Conexión Neon PostgreSQL para validación de licencias | — |
