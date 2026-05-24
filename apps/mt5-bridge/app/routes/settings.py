@@ -66,6 +66,7 @@ class BotSettings(BaseModel):
     LICENSE_KEY: str = Field(default="")
     BLOCKED_HOURS: List[BlockedWindow] = Field(default_factory=lambda: [BlockedWindow(**{"from": w["from"], "to": w["to"], "label": w["label"]}) for w in DEFAULT_BLOCKED_HOURS])
     MAX_DAILY_PROFIT_PERCENT: float = Field(default=3.0, ge=0.5, le=20.0)
+    MAX_WEEKLY_DRAWDOWN_PERCENT: float = Field(default=5.0, ge=0.5, le=30.0)
 
 
 def _read_config() -> BotSettings:

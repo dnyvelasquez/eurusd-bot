@@ -4,6 +4,7 @@ import { LicenseService } from '@infra/license/license.service';
 import { NewsFilterService } from '@infra/news/news-filter.service';
 import { DailyDrawdownGuard } from '@infra/risk/daily-drawdown.guard';
 import { DailyProfitTargetGuard } from '@infra/risk/daily-profit-target.guard';
+import { WeeklyDrawdownGuard } from '@infra/risk/weekly-drawdown.guard';
 import { SessionGuard } from '@infra/session/session-guard';
 import { TradeJournalService } from '@infra/journal/trade-journal.service';
 import { BotStatusService } from '@infra/status/bot-status.service';
@@ -53,6 +54,7 @@ export class Application {
   private readonly newsFilter = new NewsFilterService();
   private readonly drawdownGuard = new DailyDrawdownGuard();
   private readonly profitTargetGuard = new DailyProfitTargetGuard();
+  private readonly weeklyDrawdownGuard = new WeeklyDrawdownGuard();
   private readonly sessionGuard = new SessionGuard();
   private readonly journal = new TradeJournalService();
   private readonly statusService = new BotStatusService();
@@ -156,6 +158,7 @@ export class Application {
           this.lastKnownBalance = accountRes.data.balance;
           this.drawdownGuard.setReference(accountRes.data.balance);
           this.profitTargetGuard.setReference(accountRes.data.balance);
+          this.weeklyDrawdownGuard.setReference(accountRes.data.balance);
         }
         await this.telegramService.notifyMarketOpen();
       } else if (!isOpen && this.marketOpen) {
@@ -182,33 +185,40 @@ export class Application {
   private writeStatus(): void {
     const now = new Date().toISOString();
 
-    if (!this.marketOpen) {
-      this.statusService.write({ ready: false, reason: 'Mercado cerrado', updatedAt: now });
-      return;
-    }
+    const metrics = {
+      dailyDrawdownPct:  Math.max(0, this.drawdownGuard.drawdownPct(this.lastKnownBalance)),
+      dailyProfitPct:    Math.max(0, this.profitTargetGuard.profitPct(this.lastKnownBalance)),
+      weeklyDrawdownPct: Math.max(0, this.weeklyDrawdownGuard.drawdownPct(this.lastKnownBalance)),
+      maxDailyDrawdown:  configService.maxDailyDrawdownPercent,
+      maxDailyProfit:    configService.maxDailyProfitPercent,
+      maxWeeklyDrawdown: configService.maxWeeklyDrawdownPercent,
+    };
+
+    const write = (ready: boolean, reason: string | null) =>
+      this.statusService.write({ ready, reason, updatedAt: now, metrics });
+
+    if (!this.marketOpen) { write(false, 'Mercado cerrado'); return; }
 
     const session = this.sessionGuard.isBlocked(configService.blockedHours);
-    if (session.blocked) {
-      this.statusService.write({ ready: false, reason: `Horario bloqueado — ${session.label}`, updatedAt: now });
-      return;
-    }
+    if (session.blocked) { write(false, `Horario bloqueado — ${session.label}`); return; }
 
     if (this.newsFilter.isBlocked()) {
       const next = this.newsFilter.nextBlockedEvent();
-      this.statusService.write({ ready: false, reason: `Noticias — ${next?.title ?? 'evento USD de alto impacto'}`, updatedAt: now });
+      write(false, `Noticias — ${next?.title ?? 'evento USD de alto impacto'}`);
       return;
     }
 
     if (this.lastKnownBalance > 0) {
       if (this.drawdownGuard.isBreached(this.lastKnownBalance, configService.maxDailyDrawdownPercent)) {
-        const pct = this.drawdownGuard.drawdownPct(this.lastKnownBalance).toFixed(1);
-        this.statusService.write({ ready: false, reason: `Límite de pérdida diaria alcanzado (${pct}% / ${configService.maxDailyDrawdownPercent}%)`, updatedAt: now });
+        write(false, `Límite de pérdida diaria (${metrics.dailyDrawdownPct.toFixed(1)}% / ${metrics.maxDailyDrawdown}%)`);
         return;
       }
-
       if (this.profitTargetGuard.isReached(this.lastKnownBalance, configService.maxDailyProfitPercent)) {
-        const pct = this.profitTargetGuard.profitPct(this.lastKnownBalance).toFixed(1);
-        this.statusService.write({ ready: false, reason: `Objetivo de ganancia alcanzado (${pct}% / ${configService.maxDailyProfitPercent}%)`, updatedAt: now });
+        write(false, `Objetivo de ganancia alcanzado (${metrics.dailyProfitPct.toFixed(1)}% / ${metrics.maxDailyProfit}%)`);
+        return;
+      }
+      if (this.weeklyDrawdownGuard.isBreached(this.lastKnownBalance, configService.maxWeeklyDrawdownPercent)) {
+        write(false, `Límite de pérdida semanal (${metrics.weeklyDrawdownPct.toFixed(1)}% / ${metrics.maxWeeklyDrawdown}%)`);
         return;
       }
     }
@@ -219,11 +229,11 @@ export class Application {
 
     if (bullishElapsed < cooldownMs && bearishElapsed < cooldownMs) {
       const remaining = Math.ceil((cooldownMs - Math.max(bullishElapsed, bearishElapsed)) / 60_000);
-      this.statusService.write({ ready: false, reason: `Cooldown activo — ${remaining} min restantes`, updatedAt: now });
+      write(false, `Cooldown activo — ${remaining} min restantes`);
       return;
     }
 
-    this.statusService.write({ ready: true, reason: null, updatedAt: now });
+    write(true, null);
   }
 
   private refreshLiquidityLevels(): number {
@@ -463,6 +473,17 @@ export class Application {
           target: configService.maxDailyProfitPercent,
         },
         'Signal skipped — daily profit target reached',
+      );
+      return;
+    }
+
+    if (this.weeklyDrawdownGuard.isBreached(balance, configService.maxWeeklyDrawdownPercent)) {
+      logger.warn(
+        {
+          drawdownPct: this.weeklyDrawdownGuard.drawdownPct(balance).toFixed(2),
+          limit: configService.maxWeeklyDrawdownPercent,
+        },
+        'Signal skipped — weekly drawdown limit reached',
       );
       return;
     }

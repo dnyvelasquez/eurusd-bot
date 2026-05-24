@@ -279,6 +279,45 @@
     }
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* Limit gauges */
+    .limit-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .limit-row input {
+      width: 72px;
+      flex-shrink: 0;
+    }
+
+    .gauge-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .gauge-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .gauge-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 3px;
+      background: var(--green);
+      transition: width 0.5s ease, background 0.5s ease;
+    }
+
+    .gauge-lbl {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
     /* Journal */
     .stats-row {
       display: grid;
@@ -428,13 +467,36 @@
   </div>
 
   <div class="field">
-    <label for="max-drawdown">Pérdida máxima por sesión (%)</label>
-    <input type="number" id="max-drawdown" min="0.5" max="20" step="0.5" />
+    <label for="max-drawdown">Pérdida máxima diaria (%)</label>
+    <div class="limit-row">
+      <input type="number" id="max-drawdown" min="0.5" max="20" step="0.5" />
+      <div class="gauge-wrap">
+        <div class="gauge-track"><div class="gauge-fill" id="gf-drawdown"></div></div>
+        <span class="gauge-lbl" id="gl-drawdown">—</span>
+      </div>
+    </div>
   </div>
 
   <div class="field">
-    <label for="max-profit">Objetivo de ganancia por sesión (%)</label>
-    <input type="number" id="max-profit" min="0.5" max="20" step="0.5" />
+    <label for="max-profit">Objetivo de ganancia diaria (%)</label>
+    <div class="limit-row">
+      <input type="number" id="max-profit" min="0.5" max="20" step="0.5" />
+      <div class="gauge-wrap">
+        <div class="gauge-track"><div class="gauge-fill" id="gf-profit"></div></div>
+        <span class="gauge-lbl" id="gl-profit">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="max-weekly-drawdown">Pérdida máxima semanal (%)</label>
+    <div class="limit-row">
+      <input type="number" id="max-weekly-drawdown" min="0.5" max="30" step="0.5" />
+      <div class="gauge-wrap">
+        <div class="gauge-track"><div class="gauge-fill" id="gf-weekly"></div></div>
+        <span class="gauge-lbl" id="gl-weekly">—</span>
+      </div>
+    </div>
   </div>
 
   <div class="field">
@@ -544,6 +606,17 @@
     setTimeout(() => { el.className = ''; }, 3000);
   }
 
+  // ── Gauge helper ──────────────────────────────────────────────────────────
+  function updateGauge(id, current, max) {
+    const fill  = $(`gf-${id}`);
+    const label = $(`gl-${id}`);
+    if (!fill || !label) return;
+    const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)';
+    label.textContent = `${current.toFixed(1)}% de ${max}%`;
+  }
+
   // ── Bot trading status ────────────────────────────────────────────────────
   async function checkBotStatus() {
     try {
@@ -559,6 +632,12 @@
         text.textContent = 'Bot no disponible';
         detail.textContent = d.reason ?? '';
         return;
+      }
+
+      if (d.metrics) {
+        updateGauge('drawdown', d.metrics.dailyDrawdownPct,  d.metrics.maxDailyDrawdown);
+        updateGauge('profit',   d.metrics.dailyProfitPct,    d.metrics.maxDailyProfit);
+        updateGauge('weekly',   d.metrics.weeklyDrawdownPct, d.metrics.maxWeeklyDrawdown);
       }
 
       if (d.ready) {
@@ -614,8 +693,9 @@
     $('symbol').value       = cfg.SYMBOL ?? 'SPX500';
     $('risk').value         = cfg.RISK_PERCENT ?? 1;
     $('cooldown').value     = cfg.SIGNAL_COOLDOWN_MINUTES ?? 30;
-    $('max-drawdown').value = cfg.MAX_DAILY_DRAWDOWN_PERCENT ?? 3;
-    $('max-profit').value   = cfg.MAX_DAILY_PROFIT_PERCENT ?? 3;
+    $('max-drawdown').value        = cfg.MAX_DAILY_DRAWDOWN_PERCENT ?? 3;
+    $('max-profit').value          = cfg.MAX_DAILY_PROFIT_PERCENT ?? 3;
+    $('max-weekly-drawdown').value = cfg.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5;
 
     const live = cfg.LIVE_TRADING === true;
     $('live-trading').checked = live;
@@ -638,8 +718,9 @@
       RISK_PERCENT:                parseFloat($('risk').value),
       LIVE_TRADING:                $('live-trading').checked,
       SIGNAL_COOLDOWN_MINUTES:     parseInt($('cooldown').value, 10),
-      MAX_DAILY_DRAWDOWN_PERCENT:  parseFloat($('max-drawdown').value),
-      MAX_DAILY_PROFIT_PERCENT:    parseFloat($('max-profit').value),
+      MAX_DAILY_DRAWDOWN_PERCENT:   parseFloat($('max-drawdown').value),
+      MAX_DAILY_PROFIT_PERCENT:     parseFloat($('max-profit').value),
+      MAX_WEEKLY_DRAWDOWN_PERCENT:  parseFloat($('max-weekly-drawdown').value),
     };
 
     if (!payload.SYMBOL) { toast('El símbolo no puede estar vacío', 'err'); return; }
@@ -654,6 +735,9 @@
     }
     if (isNaN(payload.MAX_DAILY_PROFIT_PERCENT) || payload.MAX_DAILY_PROFIT_PERCENT < 0.5) {
       toast('Objetivo de ganancia mínimo: 0.5%', 'err'); return;
+    }
+    if (isNaN(payload.MAX_WEEKLY_DRAWDOWN_PERCENT) || payload.MAX_WEEKLY_DRAWDOWN_PERCENT < 0.5) {
+      toast('Pérdida semanal mínima: 0.5%', 'err'); return;
     }
 
     $('btn-save').disabled = true;
