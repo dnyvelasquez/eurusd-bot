@@ -1,5 +1,5 @@
--- SPX500 Bot — License table
--- Ejecutar en: Supabase Dashboard → SQL Editor
+-- SPX500 Bot — Tabla de licencias
+-- Ejecutar en: Neon Dashboard → SQL Editor
 
 create table public.licenses (
   id            uuid        primary key default gen_random_uuid(),
@@ -14,19 +14,9 @@ create table public.licenses (
   created_at    timestamptz not null default now()
 );
 
--- Row Level Security: activado para que solo funcione con la anon key + policy
-alter table public.licenses enable row level security;
-
--- El bot (anon key) puede leer cualquier fila.
--- La seguridad real viene de que license_key es un UUID aleatorio de 128 bits.
-create policy "read_by_key"
-  on public.licenses
-  for select to anon
-  using (true);
-
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- EJEMPLO: insertar una licencia para un familiar
+-- INSERTAR UNA LICENCIA PARA UN FAMILIAR
 -- ─────────────────────────────────────────────────────────────────────────────
 -- insert into public.licenses (owner_name, mt5_account, allowed_mode, notes)
 -- values ('Nombre Familiar', 123456789, 'demo', 'Cuenta demo para pruebas');

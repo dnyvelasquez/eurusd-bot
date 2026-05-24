@@ -26,9 +26,8 @@ const envSchema = z.object({
   // Chat ID de Telegram donde enviar notificaciones (opcional)
   TELEGRAM_CHAT_ID: z.string().optional(),
 
-  // Supabase — validación de licencia (opcional en desarrollo)
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_ANON_KEY: z.string().min(1).optional(),
+  // Neon (PostgreSQL) — validación de licencia (opcional en desarrollo)
+  DATABASE_URL: z.string().url().optional(),
   LICENSE_KEY: z.string().uuid().optional(),
 });
 
