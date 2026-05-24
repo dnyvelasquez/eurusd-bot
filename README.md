@@ -30,6 +30,7 @@ Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Mone
 │                                                          │
 │  Filtros de riesgo (se evalúan antes de cada orden)      │
 │    ├─ NewsFilterService   (bloqueo ±1 min noticias USD)  │
+│    ├─ SessionGuard        (horarios bloqueados en ET)    │
 │    └─ DailyDrawdownGuard  (límite % pérdida diaria)      │
 └──────────────────────┬──────────────────────────────────┘
                        │
@@ -106,7 +107,7 @@ El bridge incluye un dashboard en `http://localhost:8000` con las siguientes sec
 
 Los cambios guardados desde el dashboard se escriben en `config.json` en la raíz. El bot detecta el cambio automáticamente (sin reiniciar) vía `fs.watch`. Los parámetros con soporte hot-reload son:
 
-`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`
+`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
 
 ## Stack tecnológico
 
