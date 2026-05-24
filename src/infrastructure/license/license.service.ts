@@ -5,6 +5,7 @@ import postgres from 'postgres';
 
 import { logger } from '@infra/logger/logger';
 import { env } from '@config/env';
+import { configService } from '@config/config-service';
 
 export interface LicenseRecord {
   owner_name: string;
@@ -17,27 +18,23 @@ export interface LicenseRecord {
 const CACHE_PATH = path.resolve(__dirname, '..', '..', '..', 'license-cache.json');
 
 export class LicenseService {
-  private readonly configured: boolean;
-
-  constructor() {
-    this.configured = !!(env.DATABASE_URL && env.LICENSE_KEY);
-  }
-
   async validate(mt5Login: number, tradeMode: 'DEMO' | 'CONTEST' | 'REAL'): Promise<void> {
-    if (!this.configured) {
-      logger.warn('License validation skipped — DATABASE_URL / LICENSE_KEY not set');
+    const licenseKey = configService.licenseKey;
+
+    if (!env.DATABASE_URL || !licenseKey) {
+      logger.warn('License validation skipped — DATABASE_URL / LICENSE_KEY not configured');
       return;
     }
 
     logger.info({ login: mt5Login }, 'Validating license...');
 
-    const sql = postgres(env.DATABASE_URL!, { ssl: 'require', max: 1 });
+    const sql = postgres(env.DATABASE_URL, { ssl: 'require', max: 1 });
 
     try {
       const rows = await sql<LicenseRecord[]>`
         SELECT owner_name, mt5_account, allowed_mode, active, expires_at
         FROM licenses
-        WHERE license_key = ${env.LICENSE_KEY!}::uuid
+        WHERE license_key = ${licenseKey}::uuid
         LIMIT 1
       `;
 
@@ -70,41 +67,33 @@ export class LicenseService {
     }
   }
 
-  private writeCache(
-    license: LicenseRecord,
-    mt5Login: number,
-    tradeMode: string,
-  ): void {
+  private writeCache(license: LicenseRecord, mt5Login: number, tradeMode: string): void {
     try {
-      const cache = {
-        owner_name: license.owner_name,
-        mt5_account: mt5Login,
-        trade_mode: tradeMode,
-        allowed_mode: license.allowed_mode,
-        active: license.active,
-        expires_at: license.expires_at,
-        validated_at: new Date().toISOString(),
-      };
-      fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2));
+      fs.writeFileSync(
+        CACHE_PATH,
+        JSON.stringify(
+          {
+            owner_name: license.owner_name,
+            mt5_account: mt5Login,
+            trade_mode: tradeMode,
+            allowed_mode: license.allowed_mode,
+            active: license.active,
+            expires_at: license.expires_at,
+            validated_at: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      );
     } catch {
-      // no bloquear el arranque si falla la escritura del cache
+      // no bloquear el arranque si falla la escritura
     }
   }
 
-  private validateMode(
-    allowed: 'demo' | 'live' | 'both',
-    tradeMode: 'DEMO' | 'CONTEST' | 'REAL',
-  ): void {
+  private validateMode(allowed: 'demo' | 'live' | 'both', tradeMode: 'DEMO' | 'CONTEST' | 'REAL'): void {
     if (allowed === 'both') return;
-
     const isDemo = tradeMode === 'DEMO' || tradeMode === 'CONTEST';
-
-    if (allowed === 'demo' && !isDemo) {
-      throw new Error('This license only allows demo accounts — live trading is not permitted');
-    }
-
-    if (allowed === 'live' && isDemo) {
-      throw new Error('This license only allows live accounts');
-    }
+    if (allowed === 'demo' && !isDemo) throw new Error('This license only allows demo accounts');
+    if (allowed === 'live' && isDemo) throw new Error('This license only allows live accounts');
   }
 }

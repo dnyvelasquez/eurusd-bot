@@ -10,6 +10,7 @@ interface BotConfig {
   RISK_PERCENT: number;
   LIVE_TRADING: boolean;
   SIGNAL_COOLDOWN_MINUTES: number;
+  LICENSE_KEY?: string;
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
@@ -27,6 +28,12 @@ class ConfigService {
   get riskPercent(): number { return this.config.RISK_PERCENT; }
   get liveTrading(): boolean { return this.config.LIVE_TRADING; }
   get signalCooldownMinutes(): number { return this.config.SIGNAL_COOLDOWN_MINUTES; }
+
+  // LICENSE_KEY: config.json tiene prioridad sobre .env
+  get licenseKey(): string | undefined {
+    const fromFile = this.config.LICENSE_KEY;
+    return fromFile && fromFile.length > 0 ? fromFile : env.LICENSE_KEY;
+  }
 
   private loadFile(): BotConfig | null {
     try {
@@ -48,7 +55,6 @@ class ConfigService {
   private startWatcher(): void {
     if (!fs.existsSync(CONFIG_PATH)) return;
 
-    // Debounce: some editors emit multiple events on save
     let debounce: NodeJS.Timeout | null = null;
 
     this.watcher = fs.watch(CONFIG_PATH, () => {
@@ -58,7 +64,7 @@ class ConfigService {
         if (loaded) {
           this.config = loaded;
           logger.info(
-            { symbol: loaded.SYMBOL, risk: loaded.RISK_PERCENT, live: loaded.LIVE_TRADING, cooldown: loaded.SIGNAL_COOLDOWN_MINUTES },
+            { symbol: loaded.SYMBOL, risk: loaded.RISK_PERCENT, live: loaded.LIVE_TRADING },
             'Config reloaded from config.json',
           );
         }
