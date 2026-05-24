@@ -68,18 +68,34 @@ def get_stats():
         gross_l    = float(row["gross_loss"])
         pf         = round(gross_p / gross_l, 2) if gross_l > 0 else None
 
+        # Loss streak calculation
+        cur.execute(
+            "SELECT result FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at ASC"
+        )
+        results = [r["result"] for r in cur.fetchall()]
+        max_loss_streak = 0
+        cur_streak = 0
+        for r in results:
+            if r == "LOSS":
+                cur_streak += 1
+                max_loss_streak = max(max_loss_streak, cur_streak)
+            else:
+                cur_streak = 0
+
         return {
             "success": True,
             "data": {
-                "total_closed":  total,
-                "wins":          wins,
-                "losses":        row["losses"] or 0,
-                "breakevens":    row["breakevens"] or 0,
-                "open_trades":   row["open_trades"] or 0,
-                "win_rate":      win_rate,
-                "avg_rr":        float(row["avg_rr"]) if row["avg_rr"] is not None else None,
-                "total_pnl":     float(row["total_pnl"]) if row["total_pnl"] is not None else 0.0,
-                "profit_factor": pf,
+                "total_closed":       total,
+                "wins":               wins,
+                "losses":             row["losses"] or 0,
+                "breakevens":         row["breakevens"] or 0,
+                "open_trades":        row["open_trades"] or 0,
+                "win_rate":           win_rate,
+                "avg_rr":             float(row["avg_rr"]) if row["avg_rr"] is not None else None,
+                "total_pnl":          float(row["total_pnl"]) if row["total_pnl"] is not None else 0.0,
+                "profit_factor":      pf,
+                "max_loss_streak":    max_loss_streak,
+                "current_loss_streak": cur_streak,
             },
         }
     except HTTPException:

@@ -28,6 +28,7 @@ interface BotConfig {
   MIN_FVG_POINTS?: number;
   PARTIAL_TP_ENABLED?: boolean;
   M15_CONFIRMATION_ENABLED?: boolean;
+  SEMI_AUTO_MODE?: boolean;
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
@@ -54,6 +55,7 @@ class ConfigService {
   get minFvgPoints(): number { return this.config.MIN_FVG_POINTS ?? 0; }
   get partialTpEnabled(): boolean { return this.config.PARTIAL_TP_ENABLED ?? false; }
   get m15ConfirmationEnabled(): boolean { return this.config.M15_CONFIRMATION_ENABLED ?? false; }
+  get semiAutoMode(): boolean { return this.config.SEMI_AUTO_MODE ?? false; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env
   get licenseKey(): string | undefined {

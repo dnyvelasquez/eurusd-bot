@@ -67,6 +67,7 @@ export class Application {
   private lastKnownBalance = 0;
   private bridgeDown = false;
   private marketOpen = false;
+  private approvalPending = false;
 
   constructor() {
     this.telegramService = new TelegramService();
@@ -593,6 +594,25 @@ export class Application {
       return;
     }
 
+    // ── Semi-auto mode: pedir aprobación por Telegram ─────────────────────────
+    if (configService.semiAutoMode) {
+      if (this.approvalPending) {
+        logger.debug('Signal skipped — trade approval already pending');
+        return;
+      }
+      this.approvalPending = true;
+      let approved = false;
+      try {
+        approved = await this.telegramService.sendTradeApproval(notifParams);
+      } finally {
+        this.approvalPending = false;
+      }
+      if (!approved) {
+        logger.info({ direction: mss.direction }, 'Semi-auto trade rejected or timed out');
+        return;
+      }
+    }
+
     logger.info({ ...order, rr: notifParams.rr, riskAmount: notifParams.riskAmount }, 'Placing order');
 
     const orderValid = this.executionValidator.validate(order);
@@ -640,5 +660,6 @@ export class Application {
 
     configService.stop();
     this.newsFilter.stop();
+    await this.telegramService.stop();
   }
 }

@@ -28,5 +28,10 @@
       "label": "Out of market"
     }
   ],
-  "MAX_DAILY_PROFIT_PERCENT": 6.0
+  "MAX_DAILY_PROFIT_PERCENT": 6.0,
+  "MAX_WEEKLY_DRAWDOWN_PERCENT": 5.0,
+  "MAX_DAILY_TRADES": 0,
+  "MIN_FVG_POINTS": 3.0,
+  "PARTIAL_TP_ENABLED": true,
+  "M15_CONFIRMATION_ENABLED": false
 }

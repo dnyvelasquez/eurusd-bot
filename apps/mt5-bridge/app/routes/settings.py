@@ -71,6 +71,7 @@ class BotSettings(BaseModel):
     MIN_FVG_POINTS: float = Field(default=0.0, ge=0.0, le=500.0)
     PARTIAL_TP_ENABLED: bool = Field(default=False)
     M15_CONFIRMATION_ENABLED: bool = Field(default=False)
+    SEMI_AUTO_MODE: bool = Field(default=False)
 
 
 def _read_config() -> BotSettings:

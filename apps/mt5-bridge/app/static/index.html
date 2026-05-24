@@ -585,6 +585,20 @@
   </div>
 
   <div class="field">
+    <label>Modo semi-automático</label>
+    <div class="toggle-row">
+      <span class="toggle-label">Enviar alerta por Telegram antes de ejecutar</span>
+      <label class="toggle">
+        <input type="checkbox" id="semi-auto" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">
+      El bot detecta el setup y envía botones Ejecutar / Ignorar. Requiere reiniciar el bot para activar.
+    </div>
+  </div>
+
+  <div class="field">
     <label>Modo de trading</label>
     <div class="toggle-row">
       <span class="toggle-label" id="live-label">Paper (sin órdenes reales)</span>
@@ -667,6 +681,16 @@
     <div class="stat-box">
       <div class="stat-val" id="j-pnl">—</div>
       <div class="stat-lbl">P&L Total</div>
+    </div>
+  </div>
+  <div class="stats-row" style="grid-template-columns:1fr 1fr;margin-bottom:20px">
+    <div class="stat-box">
+      <div class="stat-val" id="j-max-streak">—</div>
+      <div class="stat-lbl">Racha pérd. máx.</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="j-cur-streak">—</div>
+      <div class="stat-lbl">Racha pérd. actual</div>
     </div>
   </div>
 
@@ -797,6 +821,7 @@
     $('min-fvg-points').value      = cfg.MIN_FVG_POINTS ?? 0;
     $('partial-tp').checked        = cfg.PARTIAL_TP_ENABLED === true;
     $('m15-confirm').checked       = cfg.M15_CONFIRMATION_ENABLED === true;
+    $('semi-auto').checked         = cfg.SEMI_AUTO_MODE === true;
 
     const live = cfg.LIVE_TRADING === true;
     $('live-trading').checked = live;
@@ -826,6 +851,7 @@
       MIN_FVG_POINTS:              parseFloat($('min-fvg-points').value) || 0,
       PARTIAL_TP_ENABLED:          $('partial-tp').checked,
       M15_CONFIRMATION_ENABLED:    $('m15-confirm').checked,
+      SEMI_AUTO_MODE:              $('semi-auto').checked,
     };
 
     if (!payload.SYMBOL) { toast('El símbolo no puede estar vacío', 'err'); return; }
@@ -1064,6 +1090,13 @@
         const pnl = s.total_pnl;
         $('j-pnl').textContent = pnl >= 0 ? `+$${pnl.toFixed(0)}` : `-$${Math.abs(pnl).toFixed(0)}`;
         $('j-pnl').style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+        const maxStreak = s.max_loss_streak ?? 0;
+        const curStreak = s.current_loss_streak ?? 0;
+        $('j-max-streak').textContent = maxStreak > 0 ? `${maxStreak}` : '—';
+        $('j-max-streak').style.color = maxStreak >= 3 ? 'var(--red)' : maxStreak >= 2 ? 'var(--yellow)' : 'var(--text)';
+        $('j-cur-streak').textContent = curStreak > 0 ? `${curStreak}` : '0';
+        $('j-cur-streak').style.color = curStreak >= 3 ? 'var(--red)' : curStreak >= 2 ? 'var(--yellow)' : 'var(--green)';
       }
 
       if (tRes.ok) {

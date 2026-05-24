@@ -4,8 +4,17 @@ import { env } from '@config/env';
 import { configService } from '@config/config-service';
 import { logger } from '@infra/logger/logger';
 
+interface PendingApproval {
+  messageId: number;
+  chatId: string;
+  baseText: string;
+  resolve: (approved: boolean) => void;
+  timer: NodeJS.Timeout;
+}
+
 export class TelegramService {
   private readonly bot: TelegramBot;
+  private pendingApproval: PendingApproval | null = null;
 
   constructor() {
     this.bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN, { polling: false });
@@ -19,6 +28,97 @@ export class TelegramService {
     if (!env.TELEGRAM_CHAT_ID) {
       logger.warn('TELEGRAM_CHAT_ID not set — notifications disabled');
     }
+
+    this.bot.on('callback_query', (q) => this.handleCallbackQuery(q));
+
+    if (configService.semiAutoMode) {
+      await this.bot.startPolling();
+      logger.info('Telegram polling started (semi-auto mode)');
+    }
+  }
+
+  private handleCallbackQuery(query: TelegramBot.CallbackQuery): void {
+    if (!this.pendingApproval) {
+      this.bot.answerCallbackQuery(query.id, { text: 'No hay trade pendiente' }).catch(() => {});
+      return;
+    }
+    if (query.message?.message_id !== this.pendingApproval.messageId) {
+      this.bot.answerCallbackQuery(query.id, { text: 'Trade ya procesado' }).catch(() => {});
+      return;
+    }
+
+    const approved = query.data === 'execute';
+    this.bot.answerCallbackQuery(query.id, {
+      text: approved ? '✅ Ejecutando orden...' : '❌ Trade ignorado',
+    }).catch(() => {});
+
+    const statusSuffix = approved
+      ? '\n\n✅ <b>Aprobado — ejecutando orden</b>'
+      : '\n\n❌ <b>Ignorado por el usuario</b>';
+    this.bot.editMessageText(this.pendingApproval.baseText + statusSuffix, {
+      chat_id: this.pendingApproval.chatId,
+      message_id: this.pendingApproval.messageId,
+      parse_mode: 'HTML',
+    }).catch(() => {});
+
+    const { resolve, timer } = this.pendingApproval;
+    clearTimeout(timer);
+    this.pendingApproval = null;
+    resolve(approved);
+  }
+
+  async sendTradeApproval(params: {
+    side: string; symbol: string; entry: number; sl: number; tp: number;
+    volume: number; rr: string; riskAmount: string;
+  }, timeoutMs = 180_000): Promise<boolean> {
+    if (!env.TELEGRAM_CHAT_ID) return false;
+
+    const { side, symbol, entry, sl, tp, volume, rr, riskAmount } = params;
+    const slDist = Math.abs(entry - sl).toFixed(2);
+    const tpDist = Math.abs(tp - entry).toFixed(2);
+
+    const baseText =
+      `📋 <b>Setup detectado — ${side} ${symbol}</b>\n` +
+      `<i>Responde en los próximos 3 minutos…</i>\n\n` +
+      `Entry:  <code>${entry.toFixed(2)}</code>\n` +
+      `SL:     <code>${sl.toFixed(2)}</code>  (${slDist} pts)\n` +
+      `TP:     <code>${tp.toFixed(2)}</code>  (+${tpDist} pts)\n\n` +
+      `Vol: ${volume} | R:R: ${rr} | Riesgo: $${riskAmount}`;
+
+    const msg = await this.bot.sendMessage(env.TELEGRAM_CHAT_ID, baseText, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ Ejecutar', callback_data: 'execute' },
+          { text: '❌ Ignorar',  callback_data: 'ignore'  },
+        ]],
+      },
+    });
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingApproval?.messageId === msg.message_id) {
+          this.bot.editMessageText(
+            baseText + '\n\n⏱ <i>Sin respuesta — trade cancelado</i>',
+            { chat_id: env.TELEGRAM_CHAT_ID!, message_id: msg.message_id, parse_mode: 'HTML' },
+          ).catch(() => {});
+          this.pendingApproval = null;
+          resolve(false);
+        }
+      }, timeoutMs);
+
+      this.pendingApproval = {
+        messageId: msg.message_id,
+        chatId: env.TELEGRAM_CHAT_ID!,
+        baseText,
+        resolve,
+        timer,
+      };
+    });
+  }
+
+  public async stop(): Promise<void> {
+    await this.bot.stopPolling().catch(() => {});
   }
 
   private async send(html: string): Promise<void> {

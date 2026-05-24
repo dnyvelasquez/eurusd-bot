@@ -246,6 +246,7 @@ npm run lint         # ESLint
 | Orden fallida | ❌ Error con razón de MT5 |
 | Break-even | 🔒 SL movido a precio de entrada |
 | Partial TP | 📊 50% cerrado con precio y SL movido a BE |
+| Semi-auto setup | 📋 Botones ✅ Ejecutar / ❌ Ignorar con niveles del trade |
 | Trailing stop | 📈 SL actualizado |
 | Bridge caído | 🔌 Bridge MT5 desconectado |
 | Bridge recuperado | ✅ Bridge MT5 reconectado |
@@ -296,7 +297,18 @@ Cada operación ejecutada en modo live se registra automáticamente en la tabla 
 | `actual_rr` | R:R realizado |
 | `result` | `WIN`, `LOSS` o `BE` (break-even) |
 
-Las estadísticas (win rate, profit factor, avg R:R, P&L total) se visualizan en tiempo real en el dashboard bajo la sección **Journal**, con actualización automática cada 30 segundos.
+Las estadísticas (win rate, profit factor, avg R:R, P&L total, racha máxima y actual de pérdidas consecutivas) se visualizan en tiempo real en el dashboard bajo la sección **Journal**, con actualización automática cada 30 segundos.
+
+## Modo semi-automático
+
+Cuando `SEMI_AUTO_MODE=true` y `LIVE_TRADING=true`, el bot detecta el setup completo (todas las condiciones ICT) y en lugar de ejecutar automáticamente envía por Telegram un mensaje con los niveles del trade y dos botones:
+
+- **✅ Ejecutar** — coloca la orden en MT5 inmediatamente
+- **❌ Ignorar** — descarta el setup
+
+Si no hay respuesta en **3 minutos**, el trade se cancela automáticamente y el mensaje se actualiza indicando que expiró. Útil para usuarios que quieren supervisar las entradas sin perder las señales.
+
+> Requiere reiniciar el bot para activar/desactivar el polling de Telegram.
 
 ## Tests
 
@@ -326,6 +338,7 @@ npm test
 | `MIN_FVG_POINTS` | Tamaño mínimo del FVG en puntos para aceptar la entrada (`0` = sin filtro) | `0` |
 | `PARTIAL_TP_ENABLED` | `true` para cerrar 50% en 1R y dejar correr el resto | `false` |
 | `M15_CONFIRMATION_ENABLED` | `true` para exigir sesgo M15 alineado con H1 antes de entrar | `false` |
+| `SEMI_AUTO_MODE` | `true` para enviar alerta de Telegram con botones antes de ejecutar (requiere reinicio) | `false` |
 | `TELEGRAM_ENABLED` | `false` para silenciar notificaciones | `true` |
 | `LICENSE_KEY` | UUID de licencia (también editable en dashboard) | — |
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram | — |
