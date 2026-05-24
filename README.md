@@ -32,9 +32,11 @@ Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Mone
 │    ├─ NewsFilterService      (bloqueo ±1 min noticias)   │
 │    ├─ SessionGuard           (horarios bloqueados en ET) │
 │    ├─ DailyDrawdownGuard     (límite % pérdida diaria)   │
-│    └─ DailyProfitTargetGuard (objetivo % ganancia diaria)│
+│    ├─ DailyProfitTargetGuard (objetivo % ganancia diaria)│
+│    └─ WeeklyDrawdownGuard    (límite % pérdida semanal)  │
 │                                                          │
 │  TradeJournalService  (registro de operaciones en DB)    │
+│  BotStatusService     (semáforo en tiempo real)          │
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
@@ -64,6 +66,7 @@ Antes de ejecutar cualquier orden, el bot pasa por cuatro filtros en este orden:
 | **Session guard** | Bloquea señales fuera de las ventanas horarias permitidas (ver tabla abajo). Usa hora ET con soporte automático de DST. |
 | **Daily drawdown** | Si la pérdida del día supera `MAX_DAILY_DRAWDOWN_PERCENT` (default 3%), no se abren más posiciones hasta el día siguiente. |
 | **Daily profit target** | Si la ganancia del día supera `MAX_DAILY_PROFIT_PERCENT` (default 3%), no se abren más posiciones. Protege las ganancias. |
+| **Weekly drawdown** | Si la pérdida de la semana supera `MAX_WEEKLY_DRAWDOWN_PERCENT` (default 5%), no se abren posiciones hasta el lunes siguiente. Referencia se resetea cada lunes. |
 | **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (default 30) entre señales del mismo tipo para evitar sobreoperación. |
 
 ### Ventanas bloqueadas por defecto (hora ET)
@@ -103,7 +106,7 @@ El tamaño de posición se calcula en base al riesgo porcentual del balance y se
 El bridge incluye un dashboard en `http://localhost:8000` con las siguientes secciones:
 
 - **Estado** — balance, equity y conexión MT5
-- **Configuración** — editar símbolo, riesgo, modo live, cooldown, drawdown máximo, objetivo de ganancia diaria y toggle de Telegram (con hot-reload sin reiniciar el bot)
+- **Configuración** — editar símbolo, riesgo, modo live, cooldown, límites de pérdida diaria/semanal y objetivo de ganancia diaria — cada campo muestra una barra de progreso indicando qué tan cerca está del límite (verde → amarillo → rojo). Toggle de Telegram. Hot-reload sin reiniciar el bot.
 - **Licencia** — visualizar y validar la clave de licencia
 - **Telegram** — configurar token y chat ID, botón de prueba de envío
 
@@ -111,7 +114,7 @@ El bridge incluye un dashboard en `http://localhost:8000` con las siguientes sec
 
 Los cambios guardados desde el dashboard se escriben en `config.json` en la raíz. El bot detecta el cambio automáticamente (sin reiniciar) vía `fs.watch`. Los parámetros con soporte hot-reload son:
 
-`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `MAX_DAILY_PROFIT_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
+`SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `MAX_DAILY_PROFIT_PERCENT`, `MAX_WEEKLY_DRAWDOWN_PERCENT`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
 
 ## Stack tecnológico
 
@@ -250,6 +253,21 @@ Una vez abierta una posición, el bot la monitorea en cada ciclo de sync (10s):
 - **Break-even** — cuando el precio se mueve 1R a favor, el SL se mueve al precio de entrada (operación sin riesgo)
 - **Trailing stop** — cuando el precio se mueve 2R a favor, el SL sigue al precio manteniéndose a 1R de distancia
 
+## Semáforo de estado del bot
+
+El dashboard muestra en tiempo real si el bot puede operar y por qué está bloqueado:
+
+| Color | Estado |
+|---|---|
+| 🟢 Verde | Listo para operar |
+| 🟡 Amarillo | Mercado cerrado (estado normal fuera de horario) |
+| 🔴 Rojo | Bloqueado — muestra la razón exacta |
+| ⚫ Gris | Bot no disponible (apagado o sin actividad > 30s) |
+
+Razones posibles de bloqueo: horario bloqueado (NY Open / Lunch / Close / fuera de mercado), noticia USD de alto impacto, límite de pérdida diaria, objetivo de ganancia diaria, límite de pérdida semanal, cooldown activo.
+
+El bot escribe `bot-status.json` en cada ciclo de sync (10s). El dashboard lo consulta cada 10s vía `GET /api/status`. Las barras de progreso de los límites se actualizan al mismo tiempo.
+
 ## Trade Journal
 
 Cada operación ejecutada en modo live se registra automáticamente en la tabla `trades` de Neon PostgreSQL:
@@ -291,6 +309,7 @@ npm test
 | `SIGNAL_COOLDOWN_MINUTES` | Minutos entre señales del mismo tipo | `30` |
 | `MAX_DAILY_DRAWDOWN_PERCENT` | % máximo de pérdida diaria permitida | `3` |
 | `MAX_DAILY_PROFIT_PERCENT` | % objetivo de ganancia diaria (para al alcanzarlo) | `3` |
+| `MAX_WEEKLY_DRAWDOWN_PERCENT` | % máximo de pérdida semanal permitida (resetea el lunes) | `5` |
 | `TELEGRAM_ENABLED` | `false` para silenciar notificaciones | `true` |
 | `LICENSE_KEY` | UUID de licencia (también editable en dashboard) | — |
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram | — |
