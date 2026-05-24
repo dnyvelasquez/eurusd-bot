@@ -119,7 +119,25 @@ export class Application {
       return;
     }
 
-    // ── 0. Cooldown ───────────────────────────────────────────────────────────
+    // ── 0. Posiciones abiertas ────────────────────────────────────────────────
+    const positionsResponse = await this.mt5.getPositions(env.SYMBOL);
+
+    if (!positionsResponse.success) {
+      logger.error('Could not check open positions — trade skipped');
+      return;
+    }
+
+    const openPositions = positionsResponse.data ?? [];
+
+    if (openPositions.length > 0) {
+      logger.debug(
+        { count: openPositions.length, tickets: openPositions.map((p) => p.ticket) },
+        'Signal skipped — position already open',
+      );
+      return;
+    }
+
+    // ── 1. Cooldown ───────────────────────────────────────────────────────────
     const cooldownMs = env.SIGNAL_COOLDOWN_MINUTES * 60_000;
     const lastSignal = this.lastSignalTime.get(mss.direction) ?? 0;
     const elapsed = Date.now() - lastSignal;

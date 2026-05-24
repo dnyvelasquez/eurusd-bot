@@ -81,6 +81,28 @@ class MT5Client:
         }
 
     @staticmethod
+    def get_positions(symbol: str):
+
+        positions = mt5.positions_get(symbol=symbol)
+
+        if positions is None:
+            return []
+
+        return [
+            {
+                "ticket": int(p.ticket),
+                "symbol": p.symbol,
+                "type": "BUY" if p.type == 0 else "SELL",
+                "volume": float(p.volume),
+                "priceOpen": float(p.price_open),
+                "stopLoss": float(p.sl),
+                "takeProfit": float(p.tp),
+                "profit": float(p.profit),
+            }
+            for p in positions
+        ]
+
+    @staticmethod
     def place_order(
         symbol: str,
         order_type: str,

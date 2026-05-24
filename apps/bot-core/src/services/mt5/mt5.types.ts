@@ -40,3 +40,20 @@ export interface AccountResponse {
   data?: AccountInfo;
   message?: string;
 }
+
+export interface Position {
+  ticket: number;
+  symbol: string;
+  type: 'BUY' | 'SELL';
+  volume: number;
+  priceOpen: number;
+  stopLoss: number;
+  takeProfit: number;
+  profit: number;
+}
+
+export interface PositionsResponse {
+  success: boolean;
+  data?: Position[];
+  message?: string;
+}

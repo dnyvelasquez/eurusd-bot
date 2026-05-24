@@ -41,6 +41,25 @@ def get_account():
     }
 
 
+@router.get("/positions/{symbol}")
+def get_positions(symbol: str):
+
+    connected = MT5Client.connect()
+
+    if not connected:
+        return {
+            "success": False,
+            "message": "MT5 not connected"
+        }
+
+    positions = MT5Client.get_positions(symbol)
+
+    return {
+        "success": True,
+        "data": positions
+    }
+
+
 @router.get("/tick/{symbol}")
 def get_tick(symbol: str):
 
