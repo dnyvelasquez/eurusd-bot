@@ -281,9 +281,19 @@ El dashboard muestra en tiempo real si el bot puede operar y por qué está bloq
 | 🔴 Rojo | Bloqueado — muestra la razón exacta |
 | ⚫ Gris | Bot no disponible (apagado o sin actividad > 30s) |
 
-Razones posibles de bloqueo: horario bloqueado (NY Open / Lunch / Close / fuera de mercado), noticia USD de alto impacto, límite de pérdida diaria, objetivo de ganancia diaria, límite de pérdida semanal, máximo de trades diarios, cooldown activo.
+Razones posibles de bloqueo: horario bloqueado (NY Open / Lunch / Close / fuera de mercado), noticia USD de alto impacto, límite de pérdida diaria, objetivo de ganancia diaria, límite de pérdida semanal, máximo de trades diarios, cooldown activo, bridge MT5 no disponible.
 
 El bot escribe `bot-status.json` en cada ciclo de sync (10s). El dashboard lo consulta cada 10s vía `GET /api/status`. Las barras de progreso de los límites se actualizan al mismo tiempo.
+
+## Auto-reconexión al bridge
+
+Si el bridge de Python cae después de que el bot está corriendo, el bot lo detecta en el siguiente ciclo de sync (máximo 10s) y:
+
+1. Marca el estado como `bridgeDown = true` y envía notificación por Telegram (`🔌 Bridge MT5 desconectado`).
+2. El dashboard muestra **"Bridge MT5 no disponible — reconectando..."** en rojo en lugar de ponerse gris.
+3. Reintenta automáticamente cada 10s. Cuando el bridge vuelve: notifica `✅ Bridge MT5 reconectado` y reanuda operación normal.
+
+En el **arranque** del bot, si el bridge no responde, el bot espera hasta **60 segundos** (12 reintentos × 5s) antes de fallar. Esto permite arrancar el bridge y el bot casi simultáneamente sin coordinación manual.
 
 ## Trade Journal
 

@@ -117,7 +117,23 @@ export class Application {
     await this.telegramService.notifyStartup(configService.symbol, configService.riskPercent, configService.liveTrading);
   }
 
+  private async waitForBridge(maxRetries = 12, delayMs = 5_000): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await this.mt5.getAccount();
+        if (res.success) return;
+      } catch {}
+      if (attempt < maxRetries) {
+        logger.warn({ attempt, maxRetries, retryInMs: delayMs }, 'Bridge not ready — retrying...');
+        await new Promise<void>((r) => setTimeout(r, delayMs));
+      }
+    }
+    throw new Error(`Bridge unreachable after ${maxRetries} attempts — is uvicorn running?`);
+  }
+
   private async validateLicense(): Promise<void> {
+    await this.waitForBridge();
+
     const accountResponse = await this.mt5.getAccount();
 
     if (!accountResponse.success || !accountResponse.data) {
@@ -182,6 +198,8 @@ export class Application {
         this.bridgeDown = true;
         await this.telegramService.notifyBridgeDown(String(err));
       }
+
+      this.writeStatus();
     }
   }
 
@@ -201,6 +219,8 @@ export class Application {
 
     const write = (ready: boolean, reason: string | null) =>
       this.statusService.write({ ready, reason, updatedAt: now, metrics });
+
+    if (this.bridgeDown) { write(false, 'Bridge MT5 no disponible — reconectando...'); return; }
 
     if (!this.marketOpen) { write(false, 'Mercado cerrado'); return; }
 
