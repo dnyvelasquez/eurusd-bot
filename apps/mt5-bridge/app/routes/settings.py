@@ -10,7 +10,7 @@ CONFIG_PATH = (Path(__file__).parent / ".." / ".." / ".." / ".." / "config.json"
 
 
 class BotSettings(BaseModel):
-    SYMBOL: str = Field(default="US500")
+    SYMBOL: str = Field(default="SPX500")
     RISK_PERCENT: float = Field(default=1.0, ge=0.1, le=10.0)
     LIVE_TRADING: bool = Field(default=False)
     SIGNAL_COOLDOWN_MINUTES: int = Field(default=30, ge=1, le=1440)

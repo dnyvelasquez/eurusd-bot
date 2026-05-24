@@ -1,6 +1,6 @@
 {
-  "SYMBOL": "US500",
-  "RISK_PERCENT": 1,
+  "SYMBOL": "SPX500",
+  "RISK_PERCENT": 1.0,
   "LIVE_TRADING": false,
   "SIGNAL_COOLDOWN_MINUTES": 30
 }

@@ -9,7 +9,7 @@ const envSchema = z.object({
 
   TELEGRAM_BOT_TOKEN: z.string().min(1),
 
-  SYMBOL: z.string().default('US500'),
+  SYMBOL: z.string().default('SPX500'),
 
   // Porcentaje del balance a arriesgar por operación (ej: 1 = 1%)
   RISK_PERCENT: z.coerce.number().min(0.1).max(10).default(1),
