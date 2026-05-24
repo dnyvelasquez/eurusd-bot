@@ -1,9 +1,0 @@
-Pyton Env:
-cd /spx500-bot
-.venv/Scripts/activate
-cd apps/mt5-bridge
-uvicorn app.main:app --reload
-
-Tests:
-cd /spx500-bot/apps/bot-core
-npx tsx src/

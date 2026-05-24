@@ -16,6 +16,31 @@ def health():
     }
 
 
+@router.get("/account")
+def get_account():
+
+    connected = MT5Client.connect()
+
+    if not connected:
+        return {
+            "success": False,
+            "message": "MT5 not connected"
+        }
+
+    info = MT5Client.get_account_info()
+
+    if info is None:
+        return {
+            "success": False,
+            "message": "Could not retrieve account info"
+        }
+
+    return {
+        "success": True,
+        "data": info
+    }
+
+
 @router.get("/tick/{symbol}")
 def get_tick(symbol: str):
 

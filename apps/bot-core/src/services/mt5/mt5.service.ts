@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   TickResponse,
   CandlesResponse,
+  AccountResponse,
 } from "./mt5.types";
 
 export class MT5Service {
@@ -16,6 +17,14 @@ export class MT5Service {
 
     const response = await axios.get<TickResponse>(
       `${this.baseUrl}/tick/${symbol}`
+    );
+
+    return response.data;
+  }
+
+  async getAccount(): Promise<AccountResponse> {
+    const response = await axios.get<AccountResponse>(
+      `${this.baseUrl}/account`
     );
 
     return response.data;

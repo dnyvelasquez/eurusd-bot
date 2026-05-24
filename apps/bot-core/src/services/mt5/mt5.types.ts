@@ -27,3 +27,16 @@ export interface CandlesResponse {
   count: number;
   data: Candle[];
 }
+
+export interface AccountInfo {
+  balance: number;
+  equity: number;
+  margin: number;
+  freeMargin: number;
+}
+
+export interface AccountResponse {
+  success: boolean;
+  data?: AccountInfo;
+  message?: string;
+}

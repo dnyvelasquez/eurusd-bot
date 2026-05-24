@@ -15,15 +15,27 @@
 
     "resolveJsonModule": true,
 
-    "types": ["node"]
+    "types": ["node"],
+
+    "ignoreDeprecations": "6.0",
+
+    "baseUrl": ".",
+    "paths": {
+      "@app/*": ["src/app/*"],
+      "@config/*": ["src/config/*"],
+      "@infra/*": ["src/infrastructure/*"],
+      "@bot-core/*": ["apps/bot-core/src/*"]
+    }
   },
 
   "include": [
+    "src/**/*",
     "apps/**/*"
   ],
 
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "apps/bot-core/src/test-*.ts"
   ]
 }

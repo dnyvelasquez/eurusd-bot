@@ -66,6 +66,21 @@ class MT5Client:
         return candles
 
     @staticmethod
+    def get_account_info():
+
+        info = mt5.account_info()
+
+        if info is None:
+            return None
+
+        return {
+            "balance": float(info.balance),
+            "equity": float(info.equity),
+            "margin": float(info.margin),
+            "freeMargin": float(info.margin_free),
+        }
+
+    @staticmethod
     def place_order(
         symbol: str,
         order_type: str,
