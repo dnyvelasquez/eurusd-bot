@@ -52,13 +52,36 @@ La entrada se coloca en el midpoint del FVG (o al precio de mercado si no hay FV
 
 ## Filtros de riesgo
 
-Antes de ejecutar cualquier orden, el bot pasa por tres filtros en este orden:
+Antes de ejecutar cualquier orden, el bot pasa por cuatro filtros en este orden:
 
 | Filtro | Comportamiento |
 |---|---|
 | **News filter** | Bloquea señales ±1 minuto alrededor de noticias USD de alto impacto (Forex Factory). Se refresca cada día a medianoche UTC. |
+| **Session guard** | Bloquea señales fuera de las ventanas horarias permitidas (ver tabla abajo). Usa hora ET con soporte automático de DST. |
 | **Daily drawdown** | Si la pérdida del día supera `MAX_DAILY_DRAWDOWN_PERCENT` (default 3%), no se abren más posiciones hasta el día siguiente. |
 | **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (default 30) entre señales del mismo tipo para evitar sobreoperación. |
+
+### Ventanas bloqueadas por defecto (hora ET)
+
+| Ventana | Horario | Razón |
+|---|---|---|
+| NY Open | 09:30 – 09:35 | Spike de volatilidad, stops hunts erráticos, estructura sucia |
+| NY Lunch | 12:00 – 13:00 | Volumen cae ~40%, precio choppea sin dirección |
+| NY Close | 15:45 – 16:00 | Cierre de posiciones del día, movimientos artificiales |
+| Out of market | 16:00 – 09:30 | Sin volumen institucional (pre/post market) |
+
+Las ventanas son configurables en `config.json` bajo la clave `BLOCKED_HOURS` y soportan hot-reload desde el dashboard sin reiniciar el bot. Formato de cada ventana:
+
+```json
+"BLOCKED_HOURS": [
+  { "from": "09:30", "to": "09:35", "label": "NY Open" },
+  { "from": "12:00", "to": "13:00", "label": "NY Lunch" },
+  { "from": "15:45", "to": "16:00", "label": "NY Close" },
+  { "from": "16:00", "to": "09:30", "label": "Out of market" }
+]
+```
+
+> Las ventanas que cruzan medianoche (como `16:00–09:30`) se detectan automáticamente.
 
 ## Gestión de lotaje
 
