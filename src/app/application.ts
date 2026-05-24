@@ -41,6 +41,7 @@ export class Application {
 
   private pollTimer: NodeJS.Timeout | null = null;
   private readonly lastSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
+  private bridgeDown = false;
 
   constructor() {
     this.telegramService = new TelegramService();
@@ -70,7 +71,7 @@ export class Application {
 
     this.pollTimer = setInterval(
       () => {
-        this.sync().catch((err: unknown) => logger.error(err, 'Sync failed'));
+        this.sync().catch((err: unknown) => logger.error(err, 'Unexpected sync error'));
       },
       POLL_INTERVAL_MS,
     );
@@ -85,16 +86,30 @@ export class Application {
   }
 
   private async sync(): Promise<void> {
-    await this.marketData.syncSymbol(env.SYMBOL);
-    const levels = this.refreshLiquidityLevels();
+    try {
+      await this.marketData.syncSymbol(env.SYMBOL);
+      const levels = this.refreshLiquidityLevels();
 
-    const m1 = this.marketData.getCandles(env.SYMBOL, 'M1').length;
-    const h1 = this.marketData.getCandles(env.SYMBOL, 'H1').length;
+      const m1 = this.marketData.getCandles(env.SYMBOL, 'M1').length;
+      const h1 = this.marketData.getCandles(env.SYMBOL, 'H1').length;
 
-    if (m1 > 0) {
-      logger.info({ m1, h1, levels }, 'Sync OK');
-    } else {
-      logger.debug('Sync OK — no data (market closed)');
+      if (m1 > 0) {
+        logger.info({ m1, h1, levels }, 'Sync OK');
+      } else {
+        logger.debug('Sync OK — no data (market closed)');
+      }
+
+      if (this.bridgeDown) {
+        this.bridgeDown = false;
+        await this.telegramService.notifyBridgeRecovered();
+      }
+    } catch (err) {
+      logger.error(err, 'Sync failed — bridge unreachable');
+
+      if (!this.bridgeDown) {
+        this.bridgeDown = true;
+        await this.telegramService.notifyBridgeDown(String(err));
+      }
     }
   }
 

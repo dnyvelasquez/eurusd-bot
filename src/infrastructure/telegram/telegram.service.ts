@@ -97,4 +97,15 @@ export class TelegramService {
       `<code>${reason}</code>`,
     );
   }
+
+  async notifyBridgeDown(reason: string): Promise<void> {
+    await this.send(
+      `🔌 <b>Bridge MT5 desconectado</b>\n` +
+      `<code>${reason}</code>`,
+    );
+  }
+
+  async notifyBridgeRecovered(): Promise<void> {
+    await this.send(`✅ <b>Bridge MT5 reconectado</b>`);
+  }
 }
