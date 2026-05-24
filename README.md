@@ -12,7 +12,7 @@ Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Mone
 ┌──────────────────────▼──────────────────────────────────┐
 │              mt5-bridge  (Python / FastAPI)              │
 │  /health  /account  /candles  /positions  /trade        │
-│  /settings  /license  /telegram                         │
+│  /settings  /license  /telegram  /status  /journal      │
 │  Dashboard web  →  http://localhost:8000                 │
 └──────────────────────┬──────────────────────────────────┘
                        │ HTTP
@@ -26,7 +26,7 @@ Bot de trading algorítmico para el S&P 500 basado en conceptos ICT / Smart Mone
 │    ├─ MSSDetector      (Market Structure Shift)          │
 │    ├─ EntryValidator   (5 condiciones ICT)               │
 │    ├─ PositionSizing   (riesgo % del balance)            │
-│    └─ PositionMonitor  (break-even + trailing stop)      │
+│    └─ PositionMonitor  (break-even + partial TP + trailing)│
 │                                                          │
 │  Filtros de riesgo (se evalúan antes de cada orden)      │
 │    ├─ NewsFilterService      (bloqueo ±1 min noticias)   │
@@ -59,7 +59,7 @@ La entrada se coloca en el midpoint del FVG (o al precio de mercado si no hay FV
 
 ## Filtros de riesgo
 
-Antes de ejecutar cualquier orden, el bot pasa por cuatro filtros en este orden:
+Antes de ejecutar cualquier orden, el bot pasa por los siguientes filtros en este orden:
 
 | Filtro | Comportamiento |
 |---|---|
@@ -107,16 +107,20 @@ El tamaño de posición se calcula en base al riesgo porcentual del balance y se
 
 El bridge incluye un dashboard en `http://localhost:8000` con las siguientes secciones:
 
-- **Estado** — balance, equity y conexión MT5
-- **Configuración** — editar símbolo, riesgo, modo live, cooldown, límites de pérdida diaria/semanal/semanal y objetivo de ganancia diaria — cada campo con barra de progreso (verde → amarillo → rojo). Máximo de trades diarios con gauge. Toggles de TPs parciales y confirmación M15. Filtro de tamaño mínimo de FVG. Hot-reload sin reiniciar el bot.
+- **Estado del bridge** — conexión MT5 (verde / rojo)
+- **Estado del bot** — semáforo en tiempo real con razón de bloqueo
 - **Licencia** — visualizar y validar la clave de licencia
-- **Telegram** — configurar token y chat ID, botón de prueba de envío
+- **Configuración** — editar símbolo, riesgo, modo live, cooldown; límites de pérdida diaria/semanal y objetivo de ganancia diaria, cada uno con barra de progreso (verde → amarillo → rojo); máximo de trades diarios con gauge; toggles de TPs parciales, confirmación M15 y modo semi-automático; filtro de tamaño mínimo de FVG. Hot-reload sin reiniciar el bot.
+- **Telegram** — configurar token y chat ID, toggle de notificaciones, botón de prueba
+- **Journal** — estadísticas (win rate, profit factor, avg R:R, P&L, rachas de pérdidas) + tabla de las últimas 20 operaciones con resultado y R:R real
 
 ## Hot-reload de configuración
 
 Los cambios guardados desde el dashboard se escriben en `config.json` en la raíz. El bot detecta el cambio automáticamente (sin reiniciar) vía `fs.watch`. Los parámetros con soporte hot-reload son:
 
 `SYMBOL`, `RISK_PERCENT`, `LIVE_TRADING`, `SIGNAL_COOLDOWN_MINUTES`, `MAX_DAILY_DRAWDOWN_PERCENT`, `MAX_DAILY_PROFIT_PERCENT`, `MAX_WEEKLY_DRAWDOWN_PERCENT`, `MAX_DAILY_TRADES`, `MIN_FVG_POINTS`, `PARTIAL_TP_ENABLED`, `M15_CONFIRMATION_ENABLED`, `TELEGRAM_ENABLED`, `LICENSE_KEY`, `BLOCKED_HOURS`
+
+> `SEMI_AUTO_MODE` **no** aplica hot-reload — requiere reiniciar el bot para activar el polling de Telegram.
 
 ## Stack tecnológico
 
@@ -232,7 +236,7 @@ npm run lint         # ESLint
 | POST | `/api/telegram/test` | Enviar mensaje de prueba |
 | GET | `/api/trading/history/{ticket}` | Historial de cierre de una posición |
 | GET | `/api/journal/trades` | Últimas N operaciones del journal |
-| GET | `/api/journal/stats` | Estadísticas: win rate, profit factor, avg R:R, P&L |
+| GET | `/api/journal/stats` | Estadísticas: win rate, profit factor, avg R:R, P&L, rachas de pérdidas |
 
 ## Notificaciones Telegram
 
@@ -277,7 +281,7 @@ El dashboard muestra en tiempo real si el bot puede operar y por qué está bloq
 | 🔴 Rojo | Bloqueado — muestra la razón exacta |
 | ⚫ Gris | Bot no disponible (apagado o sin actividad > 30s) |
 
-Razones posibles de bloqueo: horario bloqueado (NY Open / Lunch / Close / fuera de mercado), noticia USD de alto impacto, límite de pérdida diaria, objetivo de ganancia diaria, límite de pérdida semanal, cooldown activo.
+Razones posibles de bloqueo: horario bloqueado (NY Open / Lunch / Close / fuera de mercado), noticia USD de alto impacto, límite de pérdida diaria, objetivo de ganancia diaria, límite de pérdida semanal, máximo de trades diarios, cooldown activo.
 
 El bot escribe `bot-status.json` en cada ciclo de sync (10s). El dashboard lo consulta cada 10s vía `GET /api/status`. Las barras de progreso de los límites se actualizan al mismo tiempo.
 
@@ -321,7 +325,7 @@ npm test
 - `FVGDetector` — Fair Value Gaps alcistas y bajistas
 - `DisplacementDetector` — fuerza del desplazamiento
 - `EntryValidator` — validación de las 5 condiciones ICT
-- `PositionMonitor` — lógica de break-even y trailing stop
+- `PositionMonitor` — lógica de break-even, partial TP y trailing stop
 
 ## Variables de entorno
 
