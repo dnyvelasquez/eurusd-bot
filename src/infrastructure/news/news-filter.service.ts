@@ -1,4 +1,4 @@
-import https from 'https';
+import axios from 'axios';
 
 import { logger } from '@infra/logger/logger';
 
@@ -46,7 +46,7 @@ export class NewsFilterService {
     }
   }
 
-  private async refresh(): Promise<void> {
+  private async refresh(attempt = 1): Promise<void> {
     const today = new Date().toISOString().slice(0, 10);
     if (this.lastFetchDate === today && this.events.length > 0) return;
 
@@ -56,29 +56,31 @@ export class NewsFilterService {
       this.lastFetchDate = today;
       logger.info({ count: this.events.length }, 'News calendar refreshed — USD high-impact events loaded');
     } catch (err) {
-      logger.warn(err, 'Failed to fetch news calendar — news filter disabled for this cycle');
+      const retryDelays = [5 * 60_000, 30 * 60_000]; // 5 min, 30 min
+      const delay = retryDelays[attempt - 1];
+
+      if (delay) {
+        logger.warn(
+          { attempt, retryInMs: delay },
+          'News calendar fetch failed — will retry',
+        );
+        setTimeout(() => this.refresh(attempt + 1), delay);
+      } else {
+        logger.warn(err, 'News calendar fetch failed after all retries — filter disabled for today');
+      }
     }
   }
 
-  private fetchCalendar(): Promise<FFEvent[]> {
-    return new Promise((resolve, reject) => {
-      const req = https.get(
-        CALENDAR_URL,
-        { headers: { 'User-Agent': 'SPX500-Bot/1.0' } },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk: string) => { body += chunk; });
-          res.on('end', () => {
-            try { resolve(JSON.parse(body) as FFEvent[]); }
-            catch (e) { reject(e); }
-          });
-        },
-      );
-      req.on('error', reject);
-      req.setTimeout(10_000, () => {
-        req.destroy(new Error('News calendar fetch timed out'));
-      });
+  private async fetchCalendar(): Promise<FFEvent[]> {
+    const { data } = await axios.get<FFEvent[]>(CALENDAR_URL, {
+      timeout: 10_000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://www.forexfactory.com/',
+      },
     });
+    return data;
   }
 
   private scheduleDailyRefresh(): void {
