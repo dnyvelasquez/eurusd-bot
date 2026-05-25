@@ -28,7 +28,7 @@ function parseArgs(argv: string[]): Record<string, string> {
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
 const DEFAULT_BLOCKED_HOURS = [
   { from: '09:30', to: '09:35', label: 'NY Open' },
-  { from: '12:00', to: '13:00', label: 'NY Lunch' },
+  { from: '12:00', to: '12:30', label: 'NY Lunch' },
   { from: '15:45', to: '16:00', label: 'NY Close' },
   { from: '16:00', to: '09:30', label: 'Out of market' },
 ];
@@ -140,6 +140,7 @@ async function main(): Promise<void> {
     cooldownMinutes: cooldown,
     blockedHours: (cfg['BLOCKED_HOURS'] as typeof DEFAULT_BLOCKED_HOURS | undefined) ?? DEFAULT_BLOCKED_HOURS,
     minFvgPoints: (cfg['MIN_FVG_POINTS'] as number | undefined) ?? 0,
+    minSlPoints: (cfg['MIN_SL_POINTS'] as number | undefined) ?? 0,
     m15ConfirmationEnabled: (cfg['M15_CONFIRMATION_ENABLED'] as boolean | undefined) ?? false,
   });
 

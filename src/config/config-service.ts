@@ -26,6 +26,7 @@ interface BotConfig {
   MAX_WEEKLY_DRAWDOWN_PERCENT?: number;
   MAX_DAILY_TRADES?: number;
   MIN_FVG_POINTS?: number;
+  MIN_SL_POINTS?: number;
   PARTIAL_TP_ENABLED?: boolean;
   M15_CONFIRMATION_ENABLED?: boolean;
   SEMI_AUTO_MODE?: boolean;
@@ -53,6 +54,7 @@ class ConfigService {
   get maxWeeklyDrawdownPercent(): number { return this.config.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5; }
   get maxDailyTrades(): number { return this.config.MAX_DAILY_TRADES ?? 0; }
   get minFvgPoints(): number { return this.config.MIN_FVG_POINTS ?? 0; }
+  get minSlPoints(): number { return this.config.MIN_SL_POINTS ?? 0; }
   get partialTpEnabled(): boolean { return this.config.PARTIAL_TP_ENABLED ?? false; }
   get m15ConfirmationEnabled(): boolean { return this.config.M15_CONFIRMATION_ENABLED ?? false; }
   get semiAutoMode(): boolean { return this.config.SEMI_AUTO_MODE ?? false; }

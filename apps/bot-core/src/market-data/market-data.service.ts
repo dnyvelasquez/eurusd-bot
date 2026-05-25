@@ -109,13 +109,11 @@ export class MarketDataService {
     ];
 
     for (const tf of timeframes) {
-
-      await this.loadCandles(
-        symbol,
-        tf,
-        200
-      );
+      await this.loadCandles(symbol, tf, 200);
     }
+
+    // D1 needs ~1 year of history for reliable bias detection
+    await this.loadCandles(symbol, "D1", 365);
   }
 
 }

@@ -390,10 +390,10 @@ export class Application {
     }
 
     const symbol = configService.symbol;
-    const h1Candles = this.marketData.getCandles(symbol, 'H1');
+    const d1Candles = this.marketData.getCandles(symbol, 'D1');
     const m5Candles = this.marketData.getCandles(symbol, 'M5');
 
-    if (h1Candles.length < 10 || m5Candles.length < 3) {
+    if (d1Candles.length < 10 || m5Candles.length < 3) {
       logger.warn('Not enough candles to evaluate signal');
       return;
     }
@@ -427,11 +427,11 @@ export class Application {
       return;
     }
 
-    // ── 3. Sesgo HTF ──────────────────────────────────────────────────────────
-    const htfBias = this.biasEngine.analyze(h1Candles);
+    // ── 3. Sesgo HTF (D1) ────────────────────────────────────────────────────
+    const htfBias = this.biasEngine.analyze(d1Candles);
 
     if (htfBias === 'RANGE') {
-      logger.debug('Signal skipped — HTF bias is RANGE');
+      logger.debug('Signal skipped — D1 bias is RANGE');
       return;
     }
 
@@ -440,7 +440,7 @@ export class Application {
       const m15Candles = this.marketData.getCandles(symbol, 'M15');
       const m15Bias = this.biasEngine.analyze(m15Candles);
       if (m15Bias !== htfBias) {
-        logger.debug({ htfBias, m15Bias }, 'Signal skipped — M15 bias not aligned with H1');
+        logger.debug({ htfBias, m15Bias }, 'Signal skipped — M15 bias not aligned with D1');
         return;
       }
     }
@@ -507,6 +507,12 @@ export class Application {
 
     // TP: mínimo 2:1 R:R
     const slDistance = Math.abs(entryPrice - stopLoss);
+
+    if (configService.minSlPoints > 0 && slDistance < configService.minSlPoints) {
+      logger.debug({ slDistance: slDistance.toFixed(2), min: configService.minSlPoints }, 'Signal skipped — SL distance too small');
+      return;
+    }
+
     const takeProfit =
       mssDirection === 'BULLISH'
         ? entryPrice + slDistance * 2

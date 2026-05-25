@@ -37,6 +37,7 @@ export interface BacktestParams {
   cooldownMinutes: number;
   blockedHours: BlockedWindow[];
   minFvgPoints: number;
+  minSlPoints: number;
   m15ConfirmationEnabled: boolean;
 }
 
@@ -183,7 +184,7 @@ function computeMetrics(trades: BacktestTrade[], initialBalance: number): Backte
 export async function runBacktest(params: BacktestParams): Promise<BacktestReport> {
   const {
     symbol, from, to, initialBalance, riskPercent, cooldownMinutes,
-    blockedHours, minFvgPoints, m15ConfirmationEnabled,
+    blockedHours, minFvgPoints, minSlPoints, m15ConfirmationEnabled,
   } = params;
 
   // Fetch starts WARM_UP_DAYS before `from` so the engine has context on day 1
@@ -198,19 +199,26 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
   const fromTimestamp = new Date(from + 'T00:00:00').getTime() / 1000;
 
+  // D1 bias needs ~1 year of history — fetch independently from M5/H1 warm-up window
+  const d1FetchFrom = new Date(from + 'T00:00:00');
+  d1FetchFrom.setDate(d1FetchFrom.getDate() - 365);
+  const d1FetchFromStr = d1FetchFrom.toISOString().slice(0, 10);
+
   console.log(`\nFetching candles for ${symbol}  (${fetchFromStr} → ${fetchToStr})...`);
 
-  const [m5Candles, h1Candles, m15Candles] = await Promise.all([
+  const [m5Candles, h1Candles, m15Candles, d1Candles] = await Promise.all([
     fetchCandles(symbol, 'M5', fetchFromStr, fetchToStr),
     fetchCandles(symbol, 'H1', fetchFromStr, fetchToStr),
     m15ConfirmationEnabled
       ? fetchCandles(symbol, 'M15', fetchFromStr, fetchToStr)
       : Promise.resolve([] as Candle[]),
+    fetchCandles(symbol, 'D1', d1FetchFromStr, fetchToStr),
   ]);
 
   console.log(`  M5:  ${m5Candles.length} candles`);
   console.log(`  H1:  ${h1Candles.length} candles`);
   if (m15ConfirmationEnabled) console.log(`  M15: ${m15Candles.length} candles`);
+  console.log(`  D1:  ${d1Candles.length} candles`);
 
   // ── Strategy engine ─────────────────────────────────────────────────────────
   const strategy = new StrategyEngine();
@@ -236,12 +244,18 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   let lastTradeCloseTime = 0;
   let h1Ptr = 0;
   let m15Ptr = 0;
+  let d1Ptr = 0;
 
   console.log(`\nReplaying ${m5Candles.length} M5 candles...`);
 
   for (let i = 0; i < m5Candles.length; i++) {
     const candle = m5Candles[i]!;
     const currentTime = candle.time;
+
+    // ── Advance D1 pointer (D1 candle closes after 86400 s) ────────────────────
+    while (d1Ptr < d1Candles.length && d1Candles[d1Ptr]!.time + 86400 <= currentTime) {
+      d1Ptr++;
+    }
 
     // ── Refresh EQH/EQL levels every hour (when a new H1 candle closes) ───────
     let h1Updated = false;
@@ -288,7 +302,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       const elapsed = currentTime - (lastSignalTime.get(dir) ?? 0);
       if (elapsed < cooldownSec) continue;
 
-      const htfBias = biasEngine.analyze(h1Window);
+      const htfBias = biasEngine.analyze(d1Candles.slice(0, d1Ptr));
       if (htfBias === 'RANGE') continue;
       if (htfBias !== dir) continue;
 
@@ -330,6 +344,8 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
         ? signal.sweep.sweepCandleLow - buffer
         : signal.sweep.sweepCandleHigh + buffer;
       const slDist = Math.abs(entryPrice - stopLoss);
+      if (minSlPoints > 0 && slDist < minSlPoints) continue;
+
       const takeProfit = dir === 'BULLISH'
         ? entryPrice + slDist * 2
         : entryPrice - slDist * 2;
