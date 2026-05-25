@@ -290,18 +290,25 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
       const htfBias = biasEngine.analyze(h1Window);
       if (htfBias === 'RANGE') continue;
+      if (htfBias !== dir) continue;
 
       if (m15ConfirmationEnabled && m15Ptr >= 5) {
         const m15Bias = biasEngine.analyze(m15Candles.slice(0, m15Ptr));
         if (m15Bias !== htfBias) continue;
       }
 
-      const recentM5 = m5Candles.slice(Math.max(0, i - 2), i + 1);
-      const fvg = dir === 'BULLISH'
-        ? fvgDetector.detectBullish(recentM5)
-        : fvgDetector.detectBearish(recentM5);
+      // Search FVG in the last 7 candles — the FVG forms during the displacement candle
+      // (2–5 candles before MSS confirmation), not at the MSS candle itself.
+      const fvgWindow = m5Candles.slice(Math.max(0, i - 6), i + 1);
+      let fvg = null;
+      for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+        const slice = fvgWindow.slice(k - 2, k + 1);
+        fvg = dir === 'BULLISH' ? fvgDetector.detectBullish(slice) : fvgDetector.detectBearish(slice);
+      }
 
-      const displacement = displacementDetector.detect(candle);
+      // Check displacement in the last 5 candles — the strong impulse candle precedes the MSS.
+      const dispWindow = m5Candles.slice(Math.max(0, i - 4), i + 1);
+      const displacement = dispWindow.map(c => displacementDetector.detect(c)).find(Boolean) ?? null;
       const sweepDir = signal.sweep.direction === 'bullish' ? ('BULLISH' as const) : ('BEARISH' as const);
 
       const valid = entryValidator.validate({

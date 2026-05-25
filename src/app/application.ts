@@ -449,13 +449,18 @@ export class Application {
     const sweepDirection = sweep.direction === 'bullish' ? 'BULLISH' : 'BEARISH';
 
     // ── 4. FVG y desplazamiento en M5 ────────────────────────────────────────
-    const recentM5 = m5Candles.slice(-3);
     const lastM5 = m5Candles[m5Candles.length - 1];
 
-    const fvg =
-      mssDirection === 'BULLISH'
-        ? this.fvgDetector.detectBullish(recentM5)
-        : this.fvgDetector.detectBearish(recentM5);
+    // Search FVG in the last 7 candles — the FVG forms during the displacement candle
+    // (2–5 candles before MSS confirmation), not at the MSS candle itself.
+    const fvgWindow = m5Candles.slice(-7);
+    let fvg = null;
+    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+      const slice = fvgWindow.slice(k - 2, k + 1);
+      fvg = mssDirection === 'BULLISH'
+        ? this.fvgDetector.detectBullish(slice)
+        : this.fvgDetector.detectBearish(slice);
+    }
 
     // Filtro de tamaño de FVG
     if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) {
@@ -466,7 +471,9 @@ export class Application {
       return;
     }
 
-    const displacement = this.displacementDetector.detect(lastM5);
+    // Check displacement in the last 5 candles — the strong impulse precedes the MSS.
+    const dispWindow = m5Candles.slice(-5);
+    const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
 
     // ── 5. Validación de condiciones de entrada ───────────────────────────────
     const valid = this.entryValidator.validate({
