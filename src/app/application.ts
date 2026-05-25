@@ -16,8 +16,8 @@ import { configService } from '@config/config-service';
 import { MarketDataService } from '@bot-core/market-data/market-data.service';
 import { StrategyEngine } from '@bot-core/core/strategy-engine';
 import { marketEvents } from '@bot-core/market-data/market-events';
-import { SwingDetector } from '@bot-core/strategy/structure/swing-detector';
 import { BiasEngine } from '@bot-core/strategy/bias/bias-engine';
+import { detectEqualHighs, detectEqualLows } from '@bot-core/strategy/liquidity/equal-levels';
 import { FVGDetector } from '@bot-core/strategy/fvg/fvg-detector';
 import { DisplacementDetector } from '@bot-core/strategy/fvg/displacement-detector';
 import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
@@ -41,7 +41,6 @@ export class Application {
   private readonly strategy: StrategyEngine;
   private readonly mt5: MT5Service;
 
-  private readonly swingDetector = new SwingDetector();
   private readonly biasEngine = new BiasEngine();
   private readonly fvgDetector = new FVGDetector();
   private readonly displacementDetector = new DisplacementDetector();
@@ -267,18 +266,14 @@ export class Application {
   }
 
   private refreshLiquidityLevels(): number {
-    const h1Candles = this.marketData.getCandles(configService.symbol, 'H1');
+    const m5Candles = this.marketData.getCandles(configService.symbol, 'M5');
 
-    if (h1Candles.length < 5) return 0;
+    if (m5Candles.length < 20) return 0;
 
-    const swings = this.swingDetector.detectSwings(h1Candles);
-
-    const levels: LiquidityLevel[] = swings.map((swing) => ({
-      price: swing.price,
-      type: swing.type === 'HIGH' ? 'BSL' : 'SSL',
-      touches: 1,
-      firstTouchTime: swing.time,
-    }));
+    const levels: LiquidityLevel[] = [
+      ...detectEqualHighs(m5Candles),
+      ...detectEqualLows(m5Candles),
+    ];
 
     this.strategy.getLiquidityEngine().addLevels(levels);
 
@@ -491,10 +486,8 @@ export class Application {
     }
 
     // ── 6. Niveles de precio ──────────────────────────────────────────────────
-    // Entrada: midpoint del FVG si existe, de lo contrario cierre de la última vela M5
-    const entryPrice = fvg
-      ? (fvg.startPrice + fvg.endPrice) / 2
-      : lastM5.close;
+    // FVG validates setup quality; execution is always a market order, not limit at FVG midpoint
+    const entryPrice = lastM5.close;
 
     // SL: más allá del extremo del sweep con un buffer del 10% del rango de esa vela
     const sweepRange = sweep.sweepCandleHigh - sweep.sweepCandleLow;

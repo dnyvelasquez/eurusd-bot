@@ -55,7 +55,7 @@ El bot requiere **5 condiciones simultáneas** antes de abrir una posición:
 4. **Desplazamiento** — vela M5 con cuerpo ≥ 70% del rango
 5. **Fair Value Gap (FVG)** — imbalance de precio en las últimas 3 velas M5
 
-La entrada se coloca en el midpoint del FVG (o al precio de mercado si no hay FVG). El SL va más allá del extremo de la vela del sweep y el TP garantiza mínimo 2:1 R:R.
+La entrada es siempre a precio de mercado (cierre de la vela M5 del setup). El FVG valida la calidad del setup pero la ejecución es siempre una orden de mercado. El SL va más allá del extremo de la vela del sweep y el TP garantiza mínimo 2:1 R:R.
 
 ## Filtros de riesgo
 
@@ -229,15 +229,17 @@ Replaya velas históricas de MT5 contra la misma estrategia de trading en vivo (
 ### Uso
 
 ```bash
-npm run backtest -- --from 2025-01-01 --to 2025-05-01
+npm run backtest -- --start 2025-01-01 --end 2025-05-01
 ```
+
+> **Nota:** npm intercepta `--from` y `--to` como flags propios. Usa `--start`/`--end` con `npm run backtest`, o pasa los argumentos directamente con `npx tsx -r tsconfig-paths/register src/backtest/index.ts --start 2025-01-01 --end 2025-05-01`.
 
 Parámetros disponibles:
 
 | Parámetro | Default | Descripción |
 |---|---|---|
-| `--from` | (requerido) | Fecha de inicio `YYYY-MM-DD` |
-| `--to` | (requerido) | Fecha de fin `YYYY-MM-DD` |
+| `--start` | (requerido) | Fecha de inicio `YYYY-MM-DD` |
+| `--end` | (requerido) | Fecha de fin `YYYY-MM-DD` |
 | `--symbol` | Desde `config.json` | Símbolo a testear |
 | `--balance` | `10000` | Balance inicial simulado en USD |
 | `--risk` | Desde `config.json` | % de riesgo por trade |
@@ -276,7 +278,7 @@ Adicionalmente escribe un archivo JSON completo en la raíz del proyecto: `backt
 | Filtros activos | Session guard, cooldown, FVG size, M15 confirmation (si activo en config) |
 | Filtros omitidos | Daily drawdown / profit / trade count — el backtest evalúa señales sin cortar días |
 | News filter | No simulado — requeriría datos históricos de noticias |
-| Entrada al mercado | Al midpoint del FVG (o cierre de la última vela M5 si no hay FVG), sin slippage |
+| Entrada al mercado | Al cierre de la vela M5 del setup (precio de mercado), sin slippage; el FVG valida calidad pero no se usa como nivel de entrada |
 | Salida | Se busca la primera vela M5 futura que toca TP o SL; si ambos se tocan en la misma vela, se asume SL primero (pesimista) salvo que el open ya esté pasado el TP |
 | Partial TPs | No simulados — resultado calculado sobre posición completa |
 | Warm-up | El motor de estrategia se precalienta con 5 días previos a `--from` + 100 velas M5 |

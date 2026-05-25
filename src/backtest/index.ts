@@ -8,12 +8,18 @@ import type { BacktestReport, BacktestTrade } from './backtest.types';
 
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
+  const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i]?.startsWith('--') && argv[i + 1] && !argv[i + 1]!.startsWith('--')) {
       out[argv[i]!.slice(2)] = argv[i + 1]!;
       i++;
+    } else if (argv[i] && !argv[i]!.startsWith('--')) {
+      positional.push(argv[i]!);
     }
   }
+  // npm@10+ strips --start/--end as unknown config flags but passes values as positionals
+  if (!out['start'] && !out['from'] && positional[0]) out['start'] = positional[0]!;
+  if (!out['end']   && !out['to']   && positional[1]) out['end']   = positional[1]!;
   return out;
 }
 
@@ -114,14 +120,14 @@ async function main(): Promise<void> {
   const cfg = readConfig();
 
   const symbol   = args['symbol']   ?? (cfg['SYMBOL'] as string | undefined)   ?? 'SPX500';
-  const from     = args['from'];
-  const to       = args['to'];
+  const from     = args['start']    ?? args['from'];
+  const to       = args['end']      ?? args['to'];
   const balance  = parseFloat(args['balance'] ?? '10000');
   const risk     = parseFloat(args['risk']    ?? String(cfg['RISK_PERCENT']   ?? 1));
   const cooldown = parseInt(args['cooldown']  ?? String(cfg['SIGNAL_COOLDOWN_MINUTES'] ?? 30), 10);
 
   if (!from || !to) {
-    console.error('\nUso: npm run backtest -- --from YYYY-MM-DD --to YYYY-MM-DD [--symbol SPX500] [--balance 10000] [--risk 1] [--cooldown 30]\n');
+    console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol SPX500] [--balance 10000] [--risk 1] [--cooldown 30]\n');
     process.exit(1);
   }
 

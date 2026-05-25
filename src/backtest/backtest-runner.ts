@@ -2,13 +2,13 @@ import axios from 'axios';
 
 import { StrategyEngine } from '@bot-core/core/strategy-engine';
 import { BiasEngine } from '@bot-core/strategy/bias/bias-engine';
-import { SwingDetector } from '@bot-core/strategy/structure/swing-detector';
+import { detectEqualHighs, detectEqualLows } from '@bot-core/strategy/liquidity/equal-levels';
 import { FVGDetector } from '@bot-core/strategy/fvg/fvg-detector';
 import { DisplacementDetector } from '@bot-core/strategy/fvg/displacement-detector';
 import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
 import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 
-import type { LiquidityLevel, LiquiditySweep } from '@bot-core/strategy/liquidity/liquidity.types';
+import type { LiquiditySweep } from '@bot-core/strategy/liquidity/liquidity.types';
 import type { MSS } from '@bot-core/strategy/mss/mss-types';
 import type { Candle } from '@bot-core/services/mt5/mt5.types';
 
@@ -215,7 +215,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   // ── Strategy engine ─────────────────────────────────────────────────────────
   const strategy = new StrategyEngine();
   const biasEngine = new BiasEngine();
-  const swingDetector = new SwingDetector();
   const fvgDetector = new FVGDetector();
   const displacementDetector = new DisplacementDetector();
   const entryValidator = new EntryValidator();
@@ -244,22 +243,19 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     const candle = m5Candles[i]!;
     const currentTime = candle.time;
 
-    // ── Advance H1 pointer (closed candles only: time + 3600 <= currentTime) ──
+    // ── Refresh EQH/EQL levels every hour (when a new H1 candle closes) ───────
     let h1Updated = false;
     while (h1Ptr < h1Candles.length && h1Candles[h1Ptr]!.time + 3600 <= currentTime) {
       h1Ptr++;
       h1Updated = true;
     }
 
-    if (h1Updated && h1Ptr >= 5) {
-      const h1Window = h1Candles.slice(0, h1Ptr);
-      const swings = swingDetector.detectSwings(h1Window);
-      const levels: LiquidityLevel[] = swings.map((s) => ({
-        price: s.price,
-        type: s.type === 'HIGH' ? ('BSL' as const) : ('SSL' as const),
-        touches: 1,
-        firstTouchTime: s.time,
-      }));
+    if (h1Updated && i >= 20) {
+      const m5Window = m5Candles.slice(Math.max(0, i - 199), i + 1);
+      const levels = [
+        ...detectEqualHighs(m5Window),
+        ...detectEqualLows(m5Window),
+      ];
       strategy.getLiquidityEngine().addLevels(levels);
     }
 
@@ -281,7 +277,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     if (currentTime <= lastTradeCloseTime) continue;
 
     const h1Window = h1Candles.slice(0, h1Ptr);
-    if (h1Window.length < 10) continue;
+    if (h1Window.length < 5) continue;
 
     // ── Evaluate each signal (take first valid one per candle) ──────────────
     for (const signal of pendingSignals) {
@@ -305,8 +301,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
         ? fvgDetector.detectBullish(recentM5)
         : fvgDetector.detectBearish(recentM5);
 
-      if (fvg && minFvgPoints > 0 && fvg.size < minFvgPoints) continue;
-
       const displacement = displacementDetector.detect(candle);
       const sweepDir = signal.sweep.direction === 'bullish' ? ('BULLISH' as const) : ('BEARISH' as const);
 
@@ -318,9 +312,11 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
         hasFVG: !!fvg,
       });
       if (!valid) continue;
+      if (fvg && minFvgPoints > 0 && fvg.size < minFvgPoints) continue;
 
       // ── Price levels ──────────────────────────────────────────────────────
-      const entryPrice = fvg ? (fvg.startPrice + fvg.endPrice) / 2 : candle.close;
+      // FVG validates setup quality; execution is always market, not limit at FVG midpoint
+      const entryPrice = candle.close;
       const sweepRange = signal.sweep.sweepCandleHigh - signal.sweep.sweepCandleLow;
       const buffer = sweepRange * SL_BUFFER_RATIO;
       const stopLoss = dir === 'BULLISH'

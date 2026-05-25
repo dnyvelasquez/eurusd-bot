@@ -6,4 +6,5 @@ coverage
 *.log
 license-cache.json
 bot-status.json
+backtest-*.json
 __pycache__
