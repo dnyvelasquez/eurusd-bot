@@ -62,7 +62,6 @@ class BotSettings(BaseModel):
     LIVE_TRADING: bool = Field(default=False)
     SIGNAL_COOLDOWN_MINUTES: int = Field(default=30, ge=1, le=1440)
     MAX_DAILY_DRAWDOWN_PERCENT: float = Field(default=2.0, ge=0.5, le=20.0)
-    MAX_WEEKLY_DRAWDOWN_PERCENT: float = Field(default=5.0, ge=0.5, le=30.0)
     MAX_DAILY_TRADES: int = Field(default=0, ge=0, le=50)
     MAX_CONSEC_LOSSES: int = Field(default=0, ge=0, le=10)
     TELEGRAM_ENABLED: bool = Field(default=True)
