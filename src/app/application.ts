@@ -83,6 +83,7 @@ export class Application {
   private bridgeDown = false;
   private marketOpen = false;
   private approvalPending = false;
+  private eodCloseDone = false;
 
   constructor() {
     this.telegramService = new TelegramService();
@@ -170,11 +171,18 @@ export class Application {
         logger.info({ symbol, m5, h1, h4, d1 }, 'Sync OK');
         await this.monitorOpenPositions();
 
-        const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
-        if (signal) {
-          await this.onZoneSignal(signal).catch((err: unknown) =>
-            logger.error(err, 'Error processing zone signal'),
-          );
+        const session = this.sessionGuard.isBlocked(configService.blockedHours);
+        if (session.blocked) {
+          if (!this.eodCloseDone && this.openPositionTickets.size > 0) {
+            await this.closeAllPositionsEOD(symbol);
+          }
+        } else {
+          const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
+          if (signal) {
+            await this.onZoneSignal(signal).catch((err: unknown) =>
+              logger.error(err, 'Error processing zone signal'),
+            );
+          }
         }
       } else {
         logger.debug('Sync OK — no data (market closed)');
@@ -182,6 +190,7 @@ export class Application {
 
       if (isOpen && !this.marketOpen) {
         this.marketOpen = true;
+        this.eodCloseDone = false;
         const accountRes = await this.mt5.getAccount();
         if (accountRes.success && accountRes.data) {
           this.lastKnownBalance = accountRes.data.balance;
@@ -356,6 +365,23 @@ export class Application {
       : entryPrice - slDistance * 2;
 
     return { direction: htfBias, entryPrice, stopLoss, takeProfit, activeZone, momentum };
+  }
+
+  private async closeAllPositionsEOD(symbol: string): Promise<void> {
+    this.eodCloseDone = true;
+    const response = await this.mt5.getPositions(symbol);
+    if (!response.success || !response.data?.length) return;
+
+    logger.warn({ count: response.data.length }, 'EOD — cerrando posiciones abiertas al cierre de sesión');
+
+    for (const position of response.data) {
+      const result = await this.mt5.closePosition(position.ticket, symbol);
+      if (result.success) {
+        logger.info({ ticket: position.ticket }, 'EOD close ejecutado');
+      } else {
+        logger.error({ ticket: position.ticket, reason: result.message }, 'EOD close fallido');
+      }
+    }
   }
 
   private async monitorOpenPositions(): Promise<void> {

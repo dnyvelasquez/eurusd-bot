@@ -84,4 +84,12 @@ export class MT5Service {
     );
     return response.data;
   }
+
+  async closePosition(ticket: number, symbol: string): Promise<PartialCloseResponse> {
+    const response = await axios.post<PartialCloseResponse>(
+      `${this.baseUrl}/positions/${ticket}/close`,
+      { symbol },
+    );
+    return response.data;
+  }
 }

@@ -190,6 +190,18 @@ def partial_close_position(ticket: int, body: PartialCloseBody):
     return MT5Client.partial_close_position(ticket, body.volume, body.symbol)
 
 
+class ClosePositionBody(BaseModel):
+    symbol: str
+
+
+@router.post("/positions/{ticket}/close")
+def close_position(ticket: int, body: ClosePositionBody):
+    connected = MT5Client.connect()
+    if not connected:
+        return {"success": False, "message": "MT5 not connected"}
+    return MT5Client.close_position(ticket, body.symbol)
+
+
 @router.get("/history/{ticket}")
 def get_position_history(ticket: int):
 
