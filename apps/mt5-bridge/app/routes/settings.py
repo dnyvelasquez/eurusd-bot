@@ -200,11 +200,26 @@ def validate_license(body: ValidateRequest):
         )
 
     # ── 4. Guardar en config.json ─────────────────────────────────────────────
-    cfg = _read_config().model_dump()
+    cfg = _read_config().model_dump(by_alias=True)
     cfg["LICENSE_KEY"] = body.license_key
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
     expires_str = str(row["expires_at"]) if row["expires_at"] else None
+
+    # ── 5. Actualizar license-cache.json ──────────────────────────────────────
+    cache = {
+        "owner_name": row["owner_name"],
+        "mt5_account": mt5_login,
+        "trade_mode": trade_mode,
+        "allowed_mode": row["allowed_mode"],
+        "active": row["active"],
+        "expires_at": expires_str,
+        "validated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        LICENSE_CACHE_PATH.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
     return ValidateResponse(
         valid=True,
