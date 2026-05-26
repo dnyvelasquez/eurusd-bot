@@ -513,8 +513,13 @@
 
   <div class="field">
     <label for="max-consec-losses">Circuit breaker <span style="color:var(--muted);font-weight:400">(0 = desactivado)</span></label>
-    <input type="number" id="max-consec-losses" min="0" max="10" step="1" />
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">Pausa el bot el resto del día al alcanzar N pérdidas consecutivas.</div>
+    <div class="limit-row">
+      <input type="number" id="max-consec-losses" min="0" max="10" step="1" />
+      <div class="gauge-wrap">
+        <div class="gauge-track"><div class="gauge-fill" id="gf-consec"></div></div>
+        <span class="gauge-lbl" id="gl-consec">—</span>
+      </div>
+    </div>
   </div>
 
   <div class="field">
@@ -756,6 +761,17 @@
     label.textContent = `${count} de ${max} trades`;
   }
 
+  function updateConsecGauge(streak, max) {
+    const fill  = $('gf-consec');
+    const label = $('gl-consec');
+    if (!fill || !label) return;
+    if (max === 0) { fill.style.width = '0%'; label.textContent = 'Desactivado'; return; }
+    const pct = Math.min(100, (streak / max) * 100);
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)';
+    label.textContent = `${streak} de ${max} pérdidas`;
+  }
+
   // ── Bot trading status ────────────────────────────────────────────────────
   async function checkBotStatus() {
     try {
@@ -778,6 +794,7 @@
         updateGauge('profit',   d.metrics.dailyProfitPct,    d.metrics.maxDailyProfit);
         updateGauge('weekly',   d.metrics.weeklyDrawdownPct, d.metrics.maxWeeklyDrawdown);
         updateTradesGauge(d.metrics.dailyTrades ?? 0, d.metrics.maxDailyTrades ?? 0);
+        updateConsecGauge(d.metrics.consecStreak ?? 0, d.metrics.maxConsecLosses ?? 0);
       }
 
       if (d.ready) {

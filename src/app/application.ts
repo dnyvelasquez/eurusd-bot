@@ -230,6 +230,8 @@ export class Application {
       maxWeeklyDrawdown: configService.maxWeeklyDrawdownPercent,
       dailyTrades:       this.dailyTradeCountGuard.tradeCount(),
       maxDailyTrades:    configService.maxDailyTrades,
+      consecStreak:      this.consecLossGuard.currentStreak,
+      maxConsecLosses:   configService.maxConsecLosses,
     };
 
     const write = (ready: boolean, reason: string | null) =>
