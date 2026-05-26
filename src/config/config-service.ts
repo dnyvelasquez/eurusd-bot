@@ -56,8 +56,6 @@ class ConfigService {
   get maxDailyDrawdownPercent(): number { return this.config.MAX_DAILY_DRAWDOWN_PERCENT ?? 3; }
   get telegramEnabled(): boolean { return this.config.TELEGRAM_ENABLED ?? true; }
   get blockedHours(): BlockedWindow[] { return this.config.BLOCKED_HOURS ?? DEFAULT_BLOCKED_HOURS; }
-  get maxDailyProfitPercent(): number { return this.config.MAX_DAILY_PROFIT_PERCENT ?? 3; }
-  get maxWeeklyDrawdownPercent(): number { return this.config.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5; }
   get maxDailyTrades(): number { return this.config.MAX_DAILY_TRADES ?? 0; }
   get minFvgPoints(): number { return this.config.MIN_FVG_POINTS ?? 0; }
   get minSlPoints(): number { return this.config.MIN_SL_POINTS ?? 0; }

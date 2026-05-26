@@ -175,7 +175,6 @@ async function main(): Promise<void> {
     epUseM15Align: epM15Align,
     epUseMacdSlope: epMacdSlope,
     maxDailyDrawdownPct:  (cfg['MAX_DAILY_DRAWDOWN_PERCENT']  as number | undefined) ?? 0,
-    maxWeeklyDrawdownPct: (cfg['MAX_WEEKLY_DRAWDOWN_PERCENT'] as number | undefined) ?? 0,
     maxConsecLosses:      (cfg['MAX_CONSEC_LOSSES']           as number | undefined) ?? 0,
     beAtPoints,
     beBuffer:   (cfg['BE_BUFFER_POINTS'] as number | undefined) ?? 0,

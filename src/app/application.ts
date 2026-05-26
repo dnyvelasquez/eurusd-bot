@@ -3,8 +3,6 @@ import { TelegramService } from '@infra/telegram/telegram.service';
 import { LicenseService } from '@infra/license/license.service';
 import { NewsFilterService } from '@infra/news/news-filter.service';
 import { DailyDrawdownGuard } from '@infra/risk/daily-drawdown.guard';
-import { DailyProfitTargetGuard } from '@infra/risk/daily-profit-target.guard';
-import { WeeklyDrawdownGuard } from '@infra/risk/weekly-drawdown.guard';
 import { DailyTradeCountGuard } from '@infra/risk/daily-trade-count.guard';
 import { ConsecLossGuard } from '@infra/risk/consec-loss.guard';
 import { SessionGuard } from '@infra/session/session-guard';
@@ -72,8 +70,6 @@ export class Application {
   private readonly licenseService = new LicenseService();
   private readonly newsFilter = new NewsFilterService();
   private readonly drawdownGuard = new DailyDrawdownGuard();
-  private readonly profitTargetGuard = new DailyProfitTargetGuard();
-  private readonly weeklyDrawdownGuard = new WeeklyDrawdownGuard();
   private readonly dailyTradeCountGuard = new DailyTradeCountGuard();
   private readonly consecLossGuard = new ConsecLossGuard();
   private readonly sessionGuard = new SessionGuard();
@@ -190,8 +186,6 @@ export class Application {
         if (accountRes.success && accountRes.data) {
           this.lastKnownBalance = accountRes.data.balance;
           this.drawdownGuard.setReference(accountRes.data.balance);
-          this.profitTargetGuard.setReference(accountRes.data.balance);
-          this.weeklyDrawdownGuard.setReference(accountRes.data.balance);
           this.consecLossGuard.resetDay();
         }
         await this.telegramService.notifyMarketOpen();
@@ -223,11 +217,7 @@ export class Application {
 
     const metrics = {
       dailyDrawdownPct:  Math.max(0, this.drawdownGuard.drawdownPct(this.lastKnownBalance)),
-      dailyProfitPct:    Math.max(0, this.profitTargetGuard.profitPct(this.lastKnownBalance)),
-      weeklyDrawdownPct: Math.max(0, this.weeklyDrawdownGuard.drawdownPct(this.lastKnownBalance)),
       maxDailyDrawdown:  configService.maxDailyDrawdownPercent,
-      maxDailyProfit:    configService.maxDailyProfitPercent,
-      maxWeeklyDrawdown: configService.maxWeeklyDrawdownPercent,
       dailyTrades:       this.dailyTradeCountGuard.tradeCount(),
       maxDailyTrades:    configService.maxDailyTrades,
       consecStreak:      this.consecLossGuard.currentStreak,
@@ -253,14 +243,6 @@ export class Application {
     if (this.lastKnownBalance > 0) {
       if (this.drawdownGuard.isBreached(this.lastKnownBalance, configService.maxDailyDrawdownPercent)) {
         write(false, `Límite de pérdida diaria (${metrics.dailyDrawdownPct.toFixed(1)}% / ${metrics.maxDailyDrawdown}%)`);
-        return;
-      }
-      if (this.profitTargetGuard.isReached(this.lastKnownBalance, configService.maxDailyProfitPercent)) {
-        write(false, `Objetivo de ganancia alcanzado (${metrics.dailyProfitPct.toFixed(1)}% / ${metrics.maxDailyProfit}%)`);
-        return;
-      }
-      if (this.weeklyDrawdownGuard.isBreached(this.lastKnownBalance, configService.maxWeeklyDrawdownPercent)) {
-        write(false, `Límite de pérdida semanal (${metrics.weeklyDrawdownPct.toFixed(1)}% / ${metrics.maxWeeklyDrawdown}%)`);
         return;
       }
     }
@@ -696,22 +678,6 @@ export class Application {
       logger.warn(
         { drawdownPct: this.drawdownGuard.drawdownPct(balance).toFixed(2), limit: configService.maxDailyDrawdownPercent },
         'Signal skipped — daily drawdown limit reached',
-      );
-      return;
-    }
-
-    if (this.profitTargetGuard.isReached(balance, configService.maxDailyProfitPercent)) {
-      logger.info(
-        { profitPct: this.profitTargetGuard.profitPct(balance).toFixed(2), target: configService.maxDailyProfitPercent },
-        'Signal skipped — daily profit target reached',
-      );
-      return;
-    }
-
-    if (this.weeklyDrawdownGuard.isBreached(balance, configService.maxWeeklyDrawdownPercent)) {
-      logger.warn(
-        { drawdownPct: this.weeklyDrawdownGuard.drawdownPct(balance).toFixed(2), limit: configService.maxWeeklyDrawdownPercent },
-        'Signal skipped — weekly drawdown limit reached',
       );
       return;
     }

@@ -3,11 +3,7 @@ import path from 'path';
 
 export interface BotStatusMetrics {
   dailyDrawdownPct: number;
-  dailyProfitPct: number;
-  weeklyDrawdownPct: number;
   maxDailyDrawdown: number;
-  maxDailyProfit: number;
-  maxWeeklyDrawdown: number;
   dailyTrades: number;
   maxDailyTrades: number;
   consecStreak: number;

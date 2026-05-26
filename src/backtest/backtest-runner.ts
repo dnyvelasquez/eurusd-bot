@@ -45,7 +45,6 @@ export interface BacktestParams {
   epUseM15Align: boolean;
   epUseMacdSlope: boolean;
   maxDailyDrawdownPct: number;
-  maxWeeklyDrawdownPct: number;
   maxConsecLosses: number;
   beAtPoints: number;   // 0=off, -1=1R mode, >0=fixed points
   beBuffer: number;
@@ -235,7 +234,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     symbol, from, to, initialBalance, riskPercent, cooldownMinutes,
     blockedHours, minFvgPoints, minSlPoints, zoneProximityPoints, zoneSlBufferPoints,
     emaSpreadMin, epUseM15Align, epUseMacdSlope,
-    maxDailyDrawdownPct, maxWeeklyDrawdownPct, maxConsecLosses,
+    maxDailyDrawdownPct, maxConsecLosses,
     beAtPoints, beBuffer, partialTpEnabled,
   } = params;
 
@@ -488,20 +487,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
   // ── Daily / weekly drawdown guard state ─────────────────────────────────────
   const etDay  = (ts: number) => new Date(ts * 1000).toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 10);
-  // Week key = date of the Monday of that week (ET)
-  const etWeek = (ts: number) => {
-    const d = new Date(ts * 1000);
-    const dayMs = 86400_000;
-    // JS getDay(): 0=Sun,1=Mon... shift so Mon=0
-    const dow = (d.getDay() + 6) % 7;
-    const monday = new Date(d.getTime() - dow * dayMs);
-    return monday.toLocaleDateString('sv-SE', { timeZone: 'America/New_York' });
-  };
 
   let currentDayKey  = '';
-  let currentWeekKey = '';
   let dayRefBalance  = initialBalance;
-  let weekRefBalance = initialBalance;
   let consecLosses   = 0;
   let circuitDay     = '';  // ET day when circuit breaker is active
 
@@ -531,16 +519,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       consecLosses = 0;   // reset per-day consecutive count
       circuitDay = '';    // reset circuit breaker for new day
     }
-    const wk = etWeek(currentTime);
-    if (wk !== currentWeekKey) { currentWeekKey = wk; weekRefBalance = balance; }
-
     if (maxDailyDrawdownPct > 0 && dayRefBalance > 0) {
       const dd = (dayRefBalance - balance) / dayRefBalance * 100;
       if (dd >= maxDailyDrawdownPct) continue;
-    }
-    if (maxWeeklyDrawdownPct > 0 && weekRefBalance > 0) {
-      const dd = (weekRefBalance - balance) / weekRefBalance * 100;
-      if (dd >= maxWeeklyDrawdownPct) continue;
     }
     if (maxConsecLosses > 0 && circuitDay === dk) continue;
 
