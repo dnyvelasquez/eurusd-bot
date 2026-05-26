@@ -4,6 +4,7 @@ dist
 logs
 coverage
 *.log
+*.err
 license-cache.json
 bot-status.json
 backtest-*.json
