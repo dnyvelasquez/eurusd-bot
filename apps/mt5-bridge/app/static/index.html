@@ -502,7 +502,7 @@
       <input type="text" id="symbol" placeholder="US500" autocomplete="off" />
     </div>
     <div class="field">
-      <label for="risk">Riesgo (%)</label>
+      <label for="risk">Riesgo por operación (%)</label>
       <input type="number" id="risk" min="0.1" max="10" step="0.1" />
     </div>
     <div class="field">
@@ -512,14 +512,9 @@
   </div>
 
   <div class="field">
-    <label for="max-drawdown">Pérdida máxima diaria (%)</label>
-    <div class="limit-row">
-      <input type="number" id="max-drawdown" min="0.5" max="20" step="0.5" />
-      <div class="gauge-wrap">
-        <div class="gauge-track"><div class="gauge-fill" id="gf-drawdown"></div></div>
-        <span class="gauge-lbl" id="gl-drawdown">—</span>
-      </div>
-    </div>
+    <label for="max-consec-losses">Circuit breaker <span style="color:var(--muted);font-weight:400">(0 = desactivado)</span></label>
+    <input type="number" id="max-consec-losses" min="0" max="10" step="1" />
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Pausa el bot el resto del día al alcanzar N pérdidas consecutivas.</div>
   </div>
 
   <div class="field">
@@ -581,12 +576,6 @@
         <span class="slider"></span>
       </label>
     </div>
-  </div>
-
-  <div class="field">
-    <label for="max-consec-losses">Circuit breaker — pérdidas consecutivas <span style="color:var(--muted);font-weight:400">(0 = desactivado)</span></label>
-    <input type="number" id="max-consec-losses" min="0" max="10" step="1" />
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">Pausa el bot el resto del día al alcanzar N pérdidas seguidas.</div>
   </div>
 
   <div class="card-title" style="margin-top:24px;margin-bottom:16px">Gestión de posiciones</div>
@@ -844,7 +833,6 @@
     $('symbol').value       = cfg.SYMBOL ?? 'SPX500';
     $('risk').value         = cfg.RISK_PERCENT ?? 1;
     $('cooldown').value     = cfg.SIGNAL_COOLDOWN_MINUTES ?? 30;
-    $('max-drawdown').value        = cfg.MAX_DAILY_DRAWDOWN_PERCENT ?? 3;
     $('max-profit').value          = cfg.MAX_DAILY_PROFIT_PERCENT ?? 3;
     $('max-weekly-drawdown').value = cfg.MAX_WEEKLY_DRAWDOWN_PERCENT ?? 5;
     $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
@@ -879,7 +867,7 @@
       RISK_PERCENT:                parseFloat($('risk').value),
       LIVE_TRADING:                $('live-trading').checked,
       SIGNAL_COOLDOWN_MINUTES:     parseInt($('cooldown').value, 10),
-      MAX_DAILY_DRAWDOWN_PERCENT:  parseFloat($('max-drawdown').value),
+      MAX_DAILY_DRAWDOWN_PERCENT:  original.MAX_DAILY_DRAWDOWN_PERCENT ?? 2.0,
       MAX_DAILY_PROFIT_PERCENT:    parseFloat($('max-profit').value),
       MAX_WEEKLY_DRAWDOWN_PERCENT: parseFloat($('max-weekly-drawdown').value),
       MAX_DAILY_TRADES:            parseInt($('max-daily-trades').value, 10) || 0,
@@ -900,9 +888,6 @@
     }
     if (isNaN(payload.SIGNAL_COOLDOWN_MINUTES) || payload.SIGNAL_COOLDOWN_MINUTES < 1) {
       toast('Cooldown mínimo: 1 minuto', 'err'); return;
-    }
-    if (isNaN(payload.MAX_DAILY_DRAWDOWN_PERCENT) || payload.MAX_DAILY_DRAWDOWN_PERCENT < 0.5) {
-      toast('Pérdida máxima mínima: 0.5%', 'err'); return;
     }
     if (isNaN(payload.MAX_DAILY_PROFIT_PERCENT) || payload.MAX_DAILY_PROFIT_PERCENT < 0.5) {
       toast('Objetivo de ganancia mínimo: 0.5%', 'err'); return;
