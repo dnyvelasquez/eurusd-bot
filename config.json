@@ -8,28 +8,7 @@
   "MAX_CONSEC_LOSS_DAYS": 2,
   "TELEGRAM_ENABLED": false,
   "LICENSE_KEY": "1e7e4bf5-a6cb-45a3-a201-ac6102335104",
-  "BLOCKED_HOURS": [
-    {
-      "from": "09:30",
-      "to": "09:35",
-      "label": "NY Open"
-    },
-    {
-      "from": "12:00",
-      "to": "12:30",
-      "label": "NY Lunch"
-    },
-    {
-      "from": "15:45",
-      "to": "16:00",
-      "label": "NY Close"
-    },
-    {
-      "from": "16:00",
-      "to": "09:30",
-      "label": "Out of market"
-    }
-  ],
+  "BLOCKED_HOURS": [],
   "MIN_SL_POINTS": 8.0,
   "MIN_FVG_POINTS": 3.0,
   "ZONE_PROXIMITY_POINTS": 20.0,
@@ -39,9 +18,9 @@
   "EP_SKIP_MONDAY": true,
   "EP_MIN_HOUR": 10,
   "EP_MAX_HOUR": 13,
+  "EP_H4_ALIGN": false,
   "EP_ADX_PERIOD": 14,
   "EP_ADX_MIN": 0,
-  "EP_H4_ALIGN": false,
   "BE_AT_POINTS": 0.0,
   "BE_BUFFER_POINTS": 0.25,
   "PARTIAL_TP_ENABLED": false,
