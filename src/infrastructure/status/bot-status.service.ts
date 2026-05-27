@@ -2,8 +2,6 @@ import fs from 'fs';
 import path from 'path';
 
 export interface BotStatusMetrics {
-  dailyDrawdownPct: number;
-  maxDailyDrawdown: number;
   dailyTrades: number;
   maxDailyTrades: number;
   consecStreak: number;

@@ -18,7 +18,6 @@ interface BotConfig {
   RISK_PERCENT: number;
   LIVE_TRADING: boolean;
   SIGNAL_COOLDOWN_MINUTES: number;
-  MAX_DAILY_DRAWDOWN_PERCENT?: number;
   TELEGRAM_ENABLED?: boolean;
   LICENSE_KEY?: string;
   BLOCKED_HOURS?: BlockedWindow[];
@@ -41,6 +40,7 @@ interface BotConfig {
   EP_MAX_HOUR?: number;
   EP_ADX_PERIOD?: number;
   EP_ADX_MIN?: number;
+  EP_H4_ALIGN?: boolean;
   MAX_CONSEC_LOSS_DAYS?: number;
 }
 
@@ -59,7 +59,6 @@ class ConfigService {
   get riskPercent(): number { return this.config.RISK_PERCENT; }
   get liveTrading(): boolean { return this.config.LIVE_TRADING; }
   get signalCooldownMinutes(): number { return this.config.SIGNAL_COOLDOWN_MINUTES; }
-  get maxDailyDrawdownPercent(): number { return this.config.MAX_DAILY_DRAWDOWN_PERCENT ?? 3; }
   get telegramEnabled(): boolean { return this.config.TELEGRAM_ENABLED ?? true; }
   get blockedHours(): BlockedWindow[] { return this.config.BLOCKED_HOURS ?? DEFAULT_BLOCKED_HOURS; }
   get maxDailyTrades(): number { return this.config.MAX_DAILY_TRADES ?? 0; }
@@ -77,8 +76,9 @@ class ConfigService {
   get epSkipMonday(): boolean { return this.config.EP_SKIP_MONDAY ?? false; }
   get epMinHour(): number { return this.config.EP_MIN_HOUR ?? 0; }
   get epMaxHour(): number    { return this.config.EP_MAX_HOUR   ?? 0;  }
-  get epAdxPeriod(): number  { return this.config.EP_ADX_PERIOD ?? 14; }
-  get epAdxMin(): number     { return this.config.EP_ADX_MIN    ?? 0;  }
+  get epAdxPeriod(): number  { return this.config.EP_ADX_PERIOD ?? 14;    }
+  get epAdxMin(): number     { return this.config.EP_ADX_MIN    ?? 0;     }
+  get epH4Align(): boolean   { return this.config.EP_H4_ALIGN   ?? false; }
   get maxConsecLossDays(): number { return this.config.MAX_CONSEC_LOSS_DAYS ?? 0; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env

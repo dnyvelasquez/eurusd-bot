@@ -12,6 +12,7 @@ import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
 import { ADXEngine } from '@bot-core/strategy/indicators/adx-engine';
+import { ChoppinessEngine } from '@bot-core/strategy/indicators/choppiness-engine';
 import type { Candle } from '@bot-core/services/mt5/mt5.types';
 
 import type { BacktestTrade, BacktestReport, BacktestMetrics, TradeResult, SignalType } from './backtest.types';
@@ -44,7 +45,6 @@ export interface BacktestParams {
   emaSpreadMin: number;
   epUseM15Align: boolean;
   epUseMacdSlope: boolean;
-  maxDailyDrawdownPct: number;
   maxConsecLosses: number;
   beAtPoints: number;   // 0=off, -1=1R mode, >0=fixed points
   beBuffer: number;
@@ -57,6 +57,11 @@ export interface BacktestParams {
   epMaxHour?: number;
   epAdxPeriod?: number;
   epAdxMin?: number;
+  epH1AdxMin?: number;
+  epH4Align?: boolean;
+  ciPeriod?: number;
+  ciMax?: number;       // 0=off; >0 skip signals when H4 CI exceeds this (e.g. 61.8)
+  ciBuyOnly?: boolean;  // when true, only skip BUY signals in choppy regime
   maxConsecLossDays?: number;
 }
 
@@ -243,11 +248,12 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     symbol, from, to, initialBalance, riskPercent, cooldownMinutes,
     blockedHours, minFvgPoints, minSlPoints, zoneProximityPoints, zoneSlBufferPoints,
     emaSpreadMin, epUseM15Align, epUseMacdSlope,
-    maxDailyDrawdownPct, maxConsecLosses,
+    maxConsecLosses,
     beAtPoints, beBuffer, partialTpEnabled,
     enableZB = true, enableEP = true,
     epMinSlPoints = 0, epSkipMonday = false, epMinHour = 0, epMaxHour = 0,
-    epAdxPeriod = 14, epAdxMin = 0,
+    epAdxPeriod = 14, epAdxMin = 0, epH1AdxMin = 0, epH4Align = false,
+    ciPeriod = 14, ciMax = 0, ciBuyOnly = false,
     maxConsecLossDays = 0,
   } = params;
 
@@ -295,6 +301,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   const emaEngine = new EMAEngine();
   const macdEngine = new MACDEngine();
   const adxEngine = new ADXEngine();
+  const choppinessEngine = new ChoppinessEngine();
 
   // ── Signal evaluators ────────────────────────────────────────────────────────
 
@@ -448,6 +455,15 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     // Reject choppy H1 — spread must be wide enough to confirm real trend
     if (emaSpreadMin > 0 && Math.abs(h1Ema8 - h1Ema34) < emaSpreadMin) return null;
 
+    // [H4] H4 EMA 8 must agree with H1 direction (top-down alignment)
+    if (epH4Align) {
+      const h4Ema8  = emaEngine.last(h4, 8);
+      const h4Ema34 = emaEngine.last(h4, 34);
+      if (h4Ema8 === null || h4Ema34 === null) return null;
+      if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
+      if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
+    }
+
     // M15 EMA 34 as dynamic support/resistance
     const m15Ema34 = emaEngine.last(m15, 34);
     if (m15Ema34 === null) return null;
@@ -468,6 +484,12 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     if (epAdxMin > 0) {
       const adx = adxEngine.last(h4, epAdxPeriod);
       if (adx === null || adx < epAdxMin) return null;
+    }
+
+    // ADX on H1: skip if H1 trend lacks conviction
+    if (epH1AdxMin > 0) {
+      const adxH1 = adxEngine.last(h1, epAdxPeriod);
+      if (adxH1 === null || adxH1 < epH1AdxMin) return null;
     }
 
     // MACD histogram on M15 must confirm trend direction
@@ -559,17 +581,14 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
       }
       // Monday resets the weekly pause
-      if (isMonday(currentTime)) { consecBadDays = 0; pauseUntilMon = false; }
+      if (isMonday(currentTime)) { consecBadDays = 0; pauseUntilMon = false; consecLosses = 0; }
       currentDayKey = dk;
       dayRefBalance = balance;
-      consecLosses = 0;
       circuitDay = '';
+      // Pre-block day if already in losing streak (cross-day consecutive loss guard)
+      if (maxConsecLosses > 0 && consecLosses >= maxConsecLosses) circuitDay = dk;
     }
     if (pauseUntilMon) continue;
-    if (maxDailyDrawdownPct > 0 && dayRefBalance > 0) {
-      const dd = (dayRefBalance - balance) / dayRefBalance * 100;
-      if (dd >= maxDailyDrawdownPct) continue;
-    }
     if (maxConsecLosses > 0 && circuitDay === dk) continue;
 
     const d1Window = d1Candles.slice(0, d1Ptr);
@@ -577,12 +596,22 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     const h1Window = h1Candles.slice(0, h1Ptr);
     const m15Window = m15Candles.slice(0, m15Ptr);
 
+    // ── Choppiness regime filter ─────────────────────────────────────────────
+    let ciChoppy = false;
+    if (ciMax > 0 && h4Window.length >= ciPeriod + 1) {
+      const ci = choppinessEngine.last(h4Window, ciPeriod);
+      if (ci !== null && ci > ciMax) ciChoppy = true;
+    }
+
     // ── Evaluar señal: ZB primero, EMA Pullback como fallback ────────────────
     const signal =
       (enableZB ? evalZoneBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
       (enableEP ? evalEMAPullback(h4Window, h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null);
 
     if (!signal) continue;
+
+    // Skip signal based on CI regime: all signals, or only BUY
+    if (ciChoppy && (!ciBuyOnly || signal.direction === 'BULLISH')) continue;
 
     // ── Cooldown ─────────────────────────────────────────────────────────────
     const elapsed = currentTime - (lastSignalTime.get(signal.direction) ?? 0);

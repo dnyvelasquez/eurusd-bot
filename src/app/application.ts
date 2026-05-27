@@ -2,7 +2,6 @@ import { logger } from '@infra/logger/logger';
 import { TelegramService } from '@infra/telegram/telegram.service';
 import { LicenseService } from '@infra/license/license.service';
 import { NewsFilterService } from '@infra/news/news-filter.service';
-import { DailyDrawdownGuard } from '@infra/risk/daily-drawdown.guard';
 import { DailyTradeCountGuard } from '@infra/risk/daily-trade-count.guard';
 import { ConsecLossGuard } from '@infra/risk/consec-loss.guard';
 import { SessionGuard } from '@infra/session/session-guard';
@@ -71,7 +70,6 @@ export class Application {
 
   private readonly licenseService = new LicenseService();
   private readonly newsFilter = new NewsFilterService();
-  private readonly drawdownGuard = new DailyDrawdownGuard();
   private readonly dailyTradeCountGuard = new DailyTradeCountGuard();
   private readonly consecLossGuard = new ConsecLossGuard();
   private readonly sessionGuard = new SessionGuard();
@@ -202,7 +200,6 @@ export class Application {
         if (accountRes.success && accountRes.data) {
           this.lastKnownBalance = accountRes.data.balance;
           this.dayOpenBalance = accountRes.data.balance;
-          this.drawdownGuard.setReference(accountRes.data.balance);
           this.consecLossGuard.resetDay();
         }
         // Monday resets the weekly pause
@@ -249,12 +246,10 @@ export class Application {
     const now = new Date().toISOString();
 
     const metrics = {
-      dailyDrawdownPct:  Math.max(0, this.drawdownGuard.drawdownPct(this.lastKnownBalance)),
-      maxDailyDrawdown:  configService.maxDailyDrawdownPercent,
-      dailyTrades:       this.dailyTradeCountGuard.tradeCount(),
-      maxDailyTrades:    configService.maxDailyTrades,
-      consecStreak:      this.consecLossGuard.currentStreak,
-      maxConsecLosses:   configService.maxConsecLosses,
+      dailyTrades:     this.dailyTradeCountGuard.tradeCount(),
+      maxDailyTrades:  configService.maxDailyTrades,
+      consecStreak:    this.consecLossGuard.currentStreak,
+      maxConsecLosses: configService.maxConsecLosses,
     };
 
     const write = (ready: boolean, reason: string | null) =>
@@ -271,13 +266,6 @@ export class Application {
       const next = this.newsFilter.nextBlockedEvent();
       write(false, `Noticias — ${next?.title ?? 'evento USD de alto impacto'}`);
       return;
-    }
-
-    if (this.lastKnownBalance > 0) {
-      if (this.drawdownGuard.isBreached(this.lastKnownBalance, configService.maxDailyDrawdownPercent)) {
-        write(false, `Límite de pérdida diaria (${metrics.dailyDrawdownPct.toFixed(1)}% / ${metrics.maxDailyDrawdown}%)`);
-        return;
-      }
     }
 
     if (this.dailyTradeCountGuard.isBreached(configService.maxDailyTrades)) {
@@ -616,6 +604,14 @@ export class Application {
 
     if (configService.emaSpreadMin > 0 && Math.abs(h1Ema8 - h1Ema34) < configService.emaSpreadMin) return null;
 
+    if (configService.epH4Align) {
+      const h4Ema8  = this.emaEngine.last(h4, 8);
+      const h4Ema34 = this.emaEngine.last(h4, 34);
+      if (h4Ema8 === null || h4Ema34 === null) return null;
+      if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
+      if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
+    }
+
     const m15Ema34 = this.emaEngine.last(m15, 34);
     if (m15Ema34 === null) return null;
 
@@ -736,14 +732,6 @@ export class Application {
 
     const { balance } = accountResponse.data;
     this.lastKnownBalance = balance;
-
-    if (this.drawdownGuard.isBreached(balance, configService.maxDailyDrawdownPercent)) {
-      logger.warn(
-        { drawdownPct: this.drawdownGuard.drawdownPct(balance).toFixed(2), limit: configService.maxDailyDrawdownPercent },
-        'Signal skipped — daily drawdown limit reached',
-      );
-      return;
-    }
 
     if (this.dailyTradeCountGuard.isBreached(configService.maxDailyTrades)) {
       logger.info(

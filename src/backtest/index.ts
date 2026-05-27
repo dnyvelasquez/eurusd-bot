@@ -160,8 +160,13 @@ async function main(): Promise<void> {
   const epMinHour        = parseInt(args['ep-min-hour'] ?? String(cfg['EP_MIN_HOUR'] ?? 0), 10);
   const epMaxHour        = parseInt(args['ep-max-hour']   ?? String(cfg['EP_MAX_HOUR']   ?? 0),  10);
   const epAdxPeriod      = parseInt(args['ep-adx-period'] ?? String(cfg['EP_ADX_PERIOD'] ?? 14), 10);
-  const epAdxMin         = parseFloat(args['ep-adx-min'] ?? String(cfg['EP_ADX_MIN']     ?? 0));
-  const maxConsecLossDays = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
+  const epAdxMin         = parseFloat(args['ep-adx-min']    ?? String(cfg['EP_ADX_MIN']    ?? 0));
+  const epH1AdxMin       = parseFloat(args['ep-h1-adx-min'] ?? '0');
+  const epH4Align        = (args['ep-h4-align']             ?? String(cfg['EP_H4_ALIGN']   ?? 'false')) === 'true';
+  const ciPeriod         = parseInt(args['ci-period']  ?? '14', 10);
+  const ciMax            = parseFloat(args['ci-max']   ?? '0');
+  const ciBuyOnly        = (args['ci-buy-only'] ?? 'false') === 'true';
+  const maxConsecLossDays   = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol SPX500] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 20]\n');
     process.exit(1);
@@ -182,7 +187,6 @@ async function main(): Promise<void> {
     emaSpreadMin: emaSpread,
     epUseM15Align: epM15Align,
     epUseMacdSlope: epMacdSlope,
-    maxDailyDrawdownPct:  (cfg['MAX_DAILY_DRAWDOWN_PERCENT']  as number | undefined) ?? 0,
     maxConsecLosses:      (cfg['MAX_CONSEC_LOSSES']           as number | undefined) ?? 0,
     beAtPoints,
     beBuffer:   (cfg['BE_BUFFER_POINTS'] as number | undefined) ?? 0,
@@ -195,6 +199,11 @@ async function main(): Promise<void> {
     epMaxHour,
     epAdxPeriod,
     epAdxMin,
+    epH1AdxMin,
+    epH4Align,
+    ciPeriod,
+    ciMax,
+    ciBuyOnly,
     maxConsecLossDays,
   });
 
