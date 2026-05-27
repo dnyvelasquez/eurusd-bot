@@ -60,7 +60,7 @@ class ConfigService {
   get liveTrading(): boolean { return this.config.LIVE_TRADING; }
   get signalCooldownMinutes(): number { return this.config.SIGNAL_COOLDOWN_MINUTES; }
   get telegramEnabled(): boolean { return this.config.TELEGRAM_ENABLED ?? true; }
-  get blockedHours(): BlockedWindow[] { return this.config.BLOCKED_HOURS ?? DEFAULT_BLOCKED_HOURS; }
+  get blockedHours(): BlockedWindow[] { return this.config.BLOCKED_HOURS?.length ? this.config.BLOCKED_HOURS : DEFAULT_BLOCKED_HOURS; }
   get maxDailyTrades(): number { return this.config.MAX_DAILY_TRADES ?? 0; }
   get minFvgPoints(): number { return this.config.MIN_FVG_POINTS ?? 0; }
   get minSlPoints(): number { return this.config.MIN_SL_POINTS ?? 0; }
