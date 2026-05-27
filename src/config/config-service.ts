@@ -38,7 +38,6 @@ interface BotConfig {
   EP_M15_ALIGN?: boolean;
   EP_SKIP_MONDAY?: boolean;
   EP_MIN_HOUR?: number;
-  BB_ENABLED?: boolean;
   MAX_CONSEC_LOSS_DAYS?: number;
 }
 
@@ -74,7 +73,6 @@ class ConfigService {
   get epM15Align(): boolean { return this.config.EP_M15_ALIGN ?? true; }
   get epSkipMonday(): boolean { return this.config.EP_SKIP_MONDAY ?? false; }
   get epMinHour(): number { return this.config.EP_MIN_HOUR ?? 0; }
-  get bbEnabled(): boolean { return this.config.BB_ENABLED ?? false; }
   get maxConsecLossDays(): number { return this.config.MAX_CONSEC_LOSS_DAYS ?? 0; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env

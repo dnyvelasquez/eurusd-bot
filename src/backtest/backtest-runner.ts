@@ -11,7 +11,6 @@ import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
 import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
-import { BollingerEngine } from '@bot-core/strategy/indicators/bb-engine';
 
 import type { Candle } from '@bot-core/services/mt5/mt5.types';
 
@@ -52,12 +51,10 @@ export interface BacktestParams {
   partialTpEnabled: boolean;
   enableZB?: boolean;
   enableEP?: boolean;
-  enableBB?: boolean;
   epMinSlPoints?: number;
   epSkipMonday?: boolean;
   epMinHour?: number;
   maxConsecLossDays?: number;
-  bbPeriod?: number;
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -245,9 +242,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     emaSpreadMin, epUseM15Align, epUseMacdSlope,
     maxDailyDrawdownPct, maxConsecLosses,
     beAtPoints, beBuffer, partialTpEnabled,
-    enableZB = true, enableEP = true, enableBB = true,
+    enableZB = true, enableEP = true,
     epMinSlPoints = 0, epSkipMonday = false, epMinHour = 0,
-    maxConsecLossDays = 0, bbPeriod = 52,
+    maxConsecLossDays = 0,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -293,7 +290,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   const positionSizing = new PositionSizing();
   const emaEngine = new EMAEngine();
   const macdEngine = new MACDEngine();
-  const bbEngine = new BollingerEngine();
 
   // ── Signal evaluators ────────────────────────────────────────────────────────
 
@@ -421,45 +417,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     if (momentum.direction !== direction) return null;
 
     return evalBPEntry(direction, pullbackZone.level, m5All, i);
-  }
-
-  function evalBBBounce(
-    d1: Candle[], h4: Candle[], h1: Candle[], m15: Candle[],
-    m5All: Candle[], i: number,
-  ): SignalCandidate | null {
-    // BB computed on M15 (52 * 15min = 13h ≈ 1.5 trading days).
-    // Outer bands are tight enough (~10-20 pts) to be touched on intraday pullbacks.
-    if (d1.length < 10 || h4.length < 10 || h1.length < 10 || m15.length < bbPeriod) return null;
-
-    const bb = bbEngine.last(m15, bbPeriod);
-    if (!bb) return null;
-
-    const currentPrice = m5All[i]!.close;
-    const { upper, lower } = bb;
-
-    // Require price to be OUTSIDE the outer band on the previous M15 candle
-    // (genuine exhaustion, not just proximity during trend continuation).
-    const prevM15 = m15.length >= 2 ? m15[m15.length - 2]! : null;
-    if (!prevM15) return null;
-    const wasOutsideLower = prevM15.close < lower;
-    const wasOutsideUpper = prevM15.close > upper;
-    if (!wasOutsideLower && !wasOutsideUpper) return null;
-
-    // Current price must have returned inside the band (or at the band) → re-entry after exhaustion.
-    const returnedFromLower = wasOutsideLower && currentPrice >= lower - zoneProximityPoints;
-    const returnedFromUpper = wasOutsideUpper && currentPrice <= upper + zoneProximityPoints;
-    if (!returnedFromLower && !returnedFromUpper) return null;
-
-    const direction: 'BULLISH' | 'BEARISH' = returnedFromLower ? 'BULLISH' : 'BEARISH';
-
-    const htfBias = biasEngine.analyzeMultiTF(d1, h4, h1);
-    if (htfBias !== direction) return null;
-
-    const momentum = momentumEngine.analyze(m15);
-    if (momentum.direction !== 'NEUTRAL' && momentum.direction !== direction) return null;
-
-    const bandLevel = direction === 'BULLISH' ? lower : upper;
-    return evalM5Entry(direction, bandLevel, m5All, i, 'BB_BOUNCE');
   }
 
   function evalEMAPullback(
@@ -610,7 +567,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     // ── Evaluar señal: ZB primero, EMA Pullback como fallback ────────────────
     const signal =
       (enableZB ? evalZoneBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
-      (enableBB ? evalBBBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
       (enableEP ? evalEMAPullback(h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null);
 
     if (!signal) continue;
