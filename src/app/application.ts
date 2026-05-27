@@ -23,6 +23,7 @@ import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
 import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
+import { BollingerEngine } from '@bot-core/strategy/indicators/bb-engine';
 import { ExecutionValidator } from '@bot-core/services/execution/execution-validator';
 import { MT5Executor } from '@bot-core/services/execution/mt5-executor';
 import { PositionMonitor } from '@bot-core/services/execution/position-monitor';
@@ -42,7 +43,7 @@ interface ZoneTradeSignal {
   takeProfit: number;
   activeZone: SRZone;
   momentum: MomentumSignal;
-  signalType?: 'ZONE' | 'EMA_PB';
+  signalType?: 'ZONE' | 'EMA_PB' | 'BB_BOUNCE';
 }
 
 export class Application {
@@ -59,6 +60,7 @@ export class Application {
   private readonly entryValidator = new EntryValidator();
   private readonly emaEngine = new EMAEngine();
   private readonly macdEngine = new MACDEngine();
+  private readonly bbEngine = new BollingerEngine();
   private readonly positionSizing = new PositionSizing();
   private readonly executionValidator = new ExecutionValidator();
   private readonly executor = new MT5Executor();
@@ -182,7 +184,7 @@ export class Application {
         } else if (this.pauseUntilMon) {
           logger.debug('Signal evaluation skipped — consecutive bad-days pause active until Monday');
         } else {
-          const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
+          const signal = this.evaluateZoneSignal(symbol) ?? (configService.bbEnabled ? this.evaluateBBBounceSignal(symbol) : null) ?? this.evaluateEMAPullbackSignal(symbol);
           if (signal) {
             await this.onZoneSignal(signal).catch((err: unknown) =>
               logger.error(err, 'Error processing zone signal'),
@@ -591,6 +593,98 @@ export class Application {
     };
   }
 
+  private evaluateBBBounceSignal(symbol: string): ZoneTradeSignal | null {
+    const BB_PERIOD = 52;
+
+    const d1 = this.marketData.getCandles(symbol, 'D1');
+    const h4 = this.marketData.getCandles(symbol, 'H4');
+    const h1 = this.marketData.getCandles(symbol, 'H1');
+    const m15 = this.marketData.getCandles(symbol, 'M15');
+    const m5 = this.marketData.getCandles(symbol, 'M5');
+
+    // BB on M15 (52 * 15min = 13h). Bands are tight enough to be touched on intraday pullbacks.
+    if (d1.length < 10 || h4.length < 10 || h1.length < 10 || m15.length < BB_PERIOD || m5.length < 1) return null;
+
+    const bb = this.bbEngine.last(m15, BB_PERIOD);
+    if (!bb) return null;
+
+    const currentPrice = m5[m5.length - 1].close;
+    const { upper, lower } = bb;
+
+    // Require previous M15 candle to have closed OUTSIDE the band → genuine exhaustion, not trend walk.
+    const prevM15 = m15.length >= 2 ? m15[m15.length - 2]! : null;
+    if (!prevM15) return null;
+    const wasOutsideLower = prevM15.close < lower;
+    const wasOutsideUpper = prevM15.close > upper;
+    if (!wasOutsideLower && !wasOutsideUpper) return null;
+
+    // Current price must have returned inside (or at) the band → re-entry after exhaustion.
+    const prox = configService.zoneProximityPoints;
+    const returnedFromLower = wasOutsideLower && currentPrice >= lower - prox;
+    const returnedFromUpper = wasOutsideUpper && currentPrice <= upper + prox;
+    if (!returnedFromLower && !returnedFromUpper) return null;
+
+    const direction: 'BULLISH' | 'BEARISH' = returnedFromLower ? 'BULLISH' : 'BEARISH';
+
+    const htfBias = this.biasEngine.analyzeMultiTF(d1, h4, h1);
+    if (htfBias !== direction) return null;
+
+    const momentum = this.momentumEngine.analyze(m15);
+    if (momentum.direction !== 'NEUTRAL' && momentum.direction !== direction) return null;
+
+    const fvgWindow = m5.slice(-7);
+    let fvg = null;
+    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+      const slice = fvgWindow.slice(k - 2, k + 1);
+      fvg = direction === 'BULLISH'
+        ? this.fvgDetector.detectBullish(slice)
+        : this.fvgDetector.detectBearish(slice);
+    }
+    if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) return null;
+
+    const dispWindow = m5.slice(-5);
+    const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
+
+    const valid = this.entryValidator.validate({
+      htfBias: direction,
+      m15Momentum: direction,  // momentum already filtered above; pass direction to satisfy validator
+      hasDisplacement: !!displacement,
+      hasFVG: !!fvg,
+    });
+    if (!valid) return null;
+
+    const bandLevel = direction === 'BULLISH' ? lower : upper;
+    const entryPrice = currentPrice;
+    const stopLoss = direction === 'BULLISH'
+      ? bandLevel - configService.zoneSlBufferPoints
+      : bandLevel + configService.zoneSlBufferPoints;
+
+    const slDist = Math.abs(entryPrice - stopLoss);
+    if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
+
+    const takeProfit = direction === 'BULLISH'
+      ? entryPrice + slDist * 2
+      : entryPrice - slDist * 2;
+
+    const syntheticZone: SRZone = {
+      level: bandLevel,
+      type: direction === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
+      timeframe: 'H1',
+      strength: 2,
+      candleTime: h1[h1.length - 1].time,
+    };
+
+    return {
+      signalType: 'BB_BOUNCE',
+      direction,
+      entryPrice,
+      stopLoss,
+      takeProfit,
+      activeZone: syntheticZone,
+      momentum,
+    };
+  }
+
   private evaluateEMAPullbackSignal(symbol: string): ZoneTradeSignal | null {
     const nowET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false }).format(new Date());
     const [weekday, hourStr] = nowET.split(', ');
@@ -663,7 +757,7 @@ export class Application {
   private async onZoneSignal(signal: ZoneTradeSignal): Promise<void> {
     const { direction, entryPrice, stopLoss, takeProfit, activeZone, momentum } = signal;
     const symbol = configService.symbol;
-    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
+    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : signal.signalType === 'BB_BOUNCE' ? '[BB]' : '[ZB]';
 
     logger.info(
       { direction, zone: activeZone.level, zoneTF: activeZone.timeframe, m15Momentum: momentum.strength, tag },

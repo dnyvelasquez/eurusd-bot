@@ -39,6 +39,7 @@
   "EP_M15_ALIGN": true,
   "EP_SKIP_MONDAY": true,
   "EP_MIN_HOUR": 10,
+  "BB_ENABLED": false,
   "BE_AT_POINTS": 0.0,
   "BE_BUFFER_POINTS": 0.25,
   "PARTIAL_TP_ENABLED": false,

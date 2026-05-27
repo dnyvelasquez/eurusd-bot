@@ -55,7 +55,7 @@ function tradeRow(t: BacktestTrade): string {
   const icon = t.result === 'WIN' ? '✓' : t.result === 'LOSS' ? '✗' : '○';
   const pnl = (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2);
   const rr = t.actualRr !== null ? t.actualRr.toFixed(2) : 'n/a';
-  const tag = t.signalType === 'BREAKOUT' ? '[BP]' : t.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
+  const tag = t.signalType === 'BREAKOUT' ? '[BP]' : t.signalType === 'EMA_PB' ? '[EP]' : t.signalType === 'BB_BOUNCE' ? '[BB]' : '[ZB]';
   return [
     pad(t.tradeNumber, 3, true),
     pad(t.openTimeISO, 17),
@@ -102,6 +102,7 @@ function printReport(r: BacktestReport): void {
 
   // Per-signal-type stats
   const zb = r.trades.filter(t => t.signalType === 'ZONE');
+  const bb = r.trades.filter(t => t.signalType === 'BB_BOUNCE');
   const bp = r.trades.filter(t => t.signalType === 'BREAKOUT');
   const ep = r.trades.filter(t => t.signalType === 'EMA_PB');
   const statLine = (label: string, ts: BacktestTrade[]) => {
@@ -117,6 +118,7 @@ function printReport(r: BacktestReport): void {
   console.log(' RESULTADOS');
   console.log(SEP);
   console.log(statLine('[ZB] Zone Bounce:    ', zb));
+  console.log(statLine('[BB] BB Bounce:      ', bb));
   console.log(statLine('[EP] EMA Pullback:   ', ep));
   console.log(statLine('[BP] Breakout+PB:    ', bp));
   console.log(sep);
@@ -155,10 +157,12 @@ async function main(): Promise<void> {
   const partialTp    = (args['partial-tp'] ?? String(cfg['PARTIAL_TP_ENABLED'] ?? 'false')) === 'true';
   const enableZB         = (args['zb'] ?? 'true') !== 'false';
   const enableEP         = (args['ep'] ?? 'true') !== 'false';
+  const enableBB         = (args['bb'] ?? String(cfg['BB_ENABLED'] ?? 'false')) === 'true';
   const epMinSlPoints    = parseFloat(args['ep-min-sl'] ?? String(cfg['EP_MIN_SL_POINTS'] ?? 0));
   const epSkipMonday     = (args['ep-skip-monday'] ?? String(cfg['EP_SKIP_MONDAY'] ?? 'false')) === 'true';
   const epMinHour        = parseInt(args['ep-min-hour'] ?? String(cfg['EP_MIN_HOUR'] ?? 0), 10);
   const maxConsecLossDays = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
+  const bbPeriod         = parseInt(args['bb-period'] ?? String(cfg['BB_PERIOD'] ?? 52), 10);
 
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol SPX500] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 20]\n');
@@ -187,10 +191,12 @@ async function main(): Promise<void> {
     partialTpEnabled: partialTp,
     enableZB,
     enableEP,
+    enableBB,
     epMinSlPoints,
     epSkipMonday,
     epMinHour,
     maxConsecLossDays,
+    bbPeriod,
   });
 
   printReport(report);
