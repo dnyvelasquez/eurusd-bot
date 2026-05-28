@@ -129,6 +129,34 @@ if (-not (Test-Path "$REPO_DIR\.env")) {
     OK '.env existe'
 }
 
+# ── license key ────────────────────────────────────────────────────────────
+Step 'License key'
+$configPath = "$REPO_DIR\config.json"
+$uuidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+$cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+$currentKey = $cfg.LICENSE_KEY
+
+$askForKey = $true
+if ($currentKey -and $currentKey -match $uuidPattern) {
+    Write-Host "  License key actual: $currentKey" -ForegroundColor DarkGray
+    $resp = Read-Host "  Cambiarla? [s/N]"
+    $askForKey = ($resp -eq 's' -or $resp -eq 'S')
+}
+
+if ($askForKey) {
+    do {
+        $newKey = Read-Host "  License key (UUID)"
+        $valid  = $newKey -match $uuidPattern
+        if (-not $valid) { Warn "  Formato inválido — debe ser: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" }
+    } while (-not $valid)
+
+    $cfg.LICENSE_KEY = $newKey.ToLower()
+    $cfg | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding utf8
+    OK "License key guardada en config.json"
+} else {
+    OK 'License key sin cambios'
+}
+
 # ── logs dir ───────────────────────────────────────────────────────────────
 New-Item -ItemType Directory -Force -Path "$REPO_DIR\logs" | Out-Null
 OK 'Directorio logs/ listo'
