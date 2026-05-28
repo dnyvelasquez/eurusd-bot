@@ -136,14 +136,11 @@ $uuidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
 $currentKey = $cfg.LICENSE_KEY
 
-$askForKey = $true
 if ($currentKey -and $currentKey -match $uuidPattern) {
     Write-Host "  License key actual: $currentKey" -ForegroundColor DarkGray
-    $resp = Read-Host "  Cambiarla? [s/N]"
-    $askForKey = ($resp -eq 's' -or $resp -eq 'S')
 }
 
-if ($askForKey) {
+if ($true) {
     do {
         $newKey = Read-Host "  License key (UUID)"
         $valid  = $newKey -match $uuidPattern
