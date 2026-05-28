@@ -150,12 +150,53 @@ Los cambios guardados desde el dashboard se escriben en `config.json` en la raí
 
 ## Requisitos
 
-- Node.js 18+
-- Python 3.10+
+- Windows 10/11 o Windows Server (requerido por MetaTrader 5)
+- Node.js 20+
+- Python 3.11+
 - MetaTrader 5 instalado y con sesión activa
 - Bot de Telegram creado via [@BotFather](https://t.me/BotFather)
 
-## Instalación
+## Despliegue en producción (VPS / máquina dedicada)
+
+Instala todo con un solo comando desde PowerShell **como Administrador**:
+
+```powershell
+# Opción A — desde el repo ya clonado:
+.\install.ps1
+
+# Opción B — máquina limpia (clona y configura todo automáticamente):
+irm https://raw.githubusercontent.com/dnyvelasquez/spx500-bot/main/install.ps1 | iex
+```
+
+El instalador:
+1. Verifica e instala Node.js 20+ y Python 3.11+ (via winget si no están presentes)
+2. Compila el bot TypeScript → `dist/`
+3. Crea el entorno virtual Python e instala dependencias del bridge
+4. Genera `.env` desde `.env.example` si no existe
+5. Registra dos **Scheduled Tasks de Windows** que arrancan automáticamente al iniciar sesión:
+   - `spx500-bridge` — FastAPI/uvicorn, comunica con MT5
+   - `spx500-bot` — motor de trading Node.js (arranca 15 s después del bridge)
+
+Una vez instalado, los comandos disponibles son:
+
+| Comando | Acción |
+|---|---|
+| `.\start.ps1` | Inicia bridge + bot |
+| `.\stop.ps1` | Detiene bot + bridge (en ese orden) |
+| `.\update.ps1` | `git pull` + rebuild + restart automático |
+
+Los logs se guardan en `logs/` con rotación diaria:
+- `logs\bridge-YYYY-MM-DD.log`
+- `logs\bot-YYYY-MM-DD.log`
+
+> **VPS sin sesión activa:** configura inicio de sesión automático en Windows
+> (`netplwiz` → desmarcar "Los usuarios deben escribir su nombre…") para que
+> las tareas arranquen tras un reinicio sin intervención manual.
+
+> **MT5:** activa *Herramientas → Opciones → General → Iniciar con Windows*
+> para que el terminal esté disponible cuando el bridge levante.
+
+## Instalación para desarrollo local
 
 ```bash
 # Clonar el repositorio
@@ -166,31 +207,26 @@ cd spx500-bot
 npm install
 
 # Entorno virtual Python
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/Mac
-
+python -m venv apps/mt5-bridge/.venv
+apps\mt5-bridge\.venv\Scripts\activate
 pip install -r apps/mt5-bridge/requirements.txt
 ```
 
 ## Configuración
 
-Crear `.env` en la raíz del proyecto:
+Copia `.env.example` a `.env` en la raíz y completa los valores:
 
 ```env
-NODE_ENV=development
+NODE_ENV=production
 
 TELEGRAM_BOT_TOKEN=tu_token_aqui
 TELEGRAM_CHAT_ID=tu_chat_id_aqui
 
 SYMBOL=SPX500
 RISK_PERCENT=1
-LIVE_TRADING=false
-
-SIGNAL_COOLDOWN_MINUTES=30
+LIVE_TRADING=false        # true para ejecutar órdenes reales
 
 LICENSE_KEY=tu-uuid-de-licencia
-
 DATABASE_URL=postgresql://...
 ```
 
@@ -199,14 +235,14 @@ DATABASE_URL=postgresql://...
 
 > Pon `LIVE_TRADING=false` para modo paper (loggea setups sin ejecutar órdenes).
 
-## Inicio
+## Inicio en desarrollo
 
 **1. Abrir MetaTrader 5** con la cuenta activa y `SPX500` visible en el Market Watch.
 
 **2. Arrancar el bridge** (terminal 1):
 ```bash
-.venv\Scripts\activate
 cd apps\mt5-bridge
+.venv\Scripts\activate
 uvicorn app.main:app --reload
 ```
 
