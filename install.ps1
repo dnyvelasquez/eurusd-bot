@@ -194,17 +194,14 @@ $bridgeAction = New-ScheduledTaskAction `
     -Execute 'powershell.exe' `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$bridgeScript`"" `
     -WorkingDirectory "$REPO_DIR\apps\mt5-bridge"
-$bridgeTrigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-
 Unregister-ScheduledTask -TaskName $TASK_BRIDGE -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask `
     -TaskName    $TASK_BRIDGE `
     -Action      $bridgeAction `
-    -Trigger     $bridgeTrigger `
     -Settings    $settingsCommon `
     -RunLevel    Highest `
     -Description 'SPX500 Bot - MT5 Bridge (FastAPI/uvicorn)' | Out-Null
-OK "Task '$TASK_BRIDGE' registered"
+OK "Task '$TASK_BRIDGE' registered (manual start only)"
 
 # bot
 $botScript = "$REPO_DIR\scripts\run-bot.ps1"
@@ -212,17 +209,15 @@ $botAction  = New-ScheduledTaskAction `
     -Execute 'powershell.exe' `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$botScript`"" `
     -WorkingDirectory $REPO_DIR
-$botTrigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
 
 Unregister-ScheduledTask -TaskName $TASK_BOT -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask `
     -TaskName    $TASK_BOT `
     -Action      $botAction `
-    -Trigger     $botTrigger `
     -Settings    $settingsCommon `
     -RunLevel    Highest `
     -Description 'SPX500 Bot - Trading Engine (Node.js)' | Out-Null
-OK "Task '$TASK_BOT' registered"
+OK "Task '$TASK_BOT' registered (manual start only)"
 
 # -- done
 Write-Host ''
@@ -244,4 +239,4 @@ Write-Host ''
 Write-Host '  IMPORTANT: Configure MetaTrader 5 to start with Windows.' -ForegroundColor Yellow
 Write-Host '  (Tools -> Options -> General -> Start with Windows)'
 Write-Host ''
-Write-Host '  Services start automatically on every login.' -ForegroundColor Cyan
+Write-Host '  El bot NO se inicia automaticamente. Usa start.ps1 y stop.ps1.' -ForegroundColor Cyan

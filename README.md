@@ -173,7 +173,7 @@ El instalador:
 2. Compila el bot TypeScript → `dist/`
 3. Crea el entorno virtual Python e instala dependencias del bridge
 4. Genera `.env` desde `.env.example` si no existe
-5. Registra dos **Scheduled Tasks de Windows** que arrancan automáticamente al iniciar sesión:
+5. Registra dos **Scheduled Tasks de Windows** (sin inicio automático):
    - `spx500-bridge` — FastAPI/uvicorn, comunica con MT5
    - `spx500-bot` — motor de trading Node.js (arranca 15 s después del bridge)
 
@@ -188,10 +188,6 @@ Una vez instalado, los comandos disponibles son:
 Los logs se guardan en `logs/` con rotación diaria:
 - `logs\bridge-YYYY-MM-DD.log`
 - `logs\bot-YYYY-MM-DD.log`
-
-> **VPS sin sesión activa:** configura inicio de sesión automático en Windows
-> (`netplwiz` → desmarcar "Los usuarios deben escribir su nombre…") para que
-> las tareas arranquen tras un reinicio sin intervención manual.
 
 > **MT5:** activa *Herramientas → Opciones → General → Iniciar con Windows*
 > para que el terminal esté disponible cuando el bridge levante.
