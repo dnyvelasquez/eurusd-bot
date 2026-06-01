@@ -153,8 +153,8 @@ async function main(): Promise<void> {
   const beAtRaw      = parseFloat(args['be-at-points'] ?? String(cfg['BE_AT_POINTS'] ?? 0));
   const beAtPoints   = beMode === '1r' ? -1 : beAtRaw;
   const partialTp    = (args['partial-tp'] ?? String(cfg['PARTIAL_TP_ENABLED'] ?? 'false')) === 'true';
-  const enableZB         = (args['zb'] ?? 'true') !== 'false';
-  const enableEP         = (args['ep'] ?? 'true') !== 'false';
+  const enableZB         = (args['zb'] ?? String(cfg['ZB_ENABLED'] ?? 'true')) !== 'false';
+  const enableEP         = (args['ep'] ?? String(cfg['EP_ENABLED'] ?? 'true')) !== 'false';
   const epMinSlPoints    = parseFloat(args['ep-min-sl'] ?? String(cfg['EP_MIN_SL_POINTS'] ?? 0));
   const epSkipMonday     = (args['ep-skip-monday'] ?? String(cfg['EP_SKIP_MONDAY'] ?? 'false')) === 'true';
   const epMinHour        = parseInt(args['ep-min-hour'] ?? String(cfg['EP_MIN_HOUR'] ?? 0), 10);
@@ -163,8 +163,8 @@ async function main(): Promise<void> {
   const epAdxMin         = parseFloat(args['ep-adx-min']    ?? String(cfg['EP_ADX_MIN']    ?? 0));
   const epH1AdxMin       = parseFloat(args['ep-h1-adx-min'] ?? '0');
   const epH4Align        = (args['ep-h4-align']             ?? String(cfg['EP_H4_ALIGN']   ?? 'false')) === 'true';
-  const ciPeriod         = parseInt(args['ci-period']  ?? '14', 10);
-  const ciMax            = parseFloat(args['ci-max']   ?? '0');
+  const ciPeriod         = parseInt(args['ci-period']  ?? String(cfg['CI_PERIOD'] ?? 14), 10);
+  const ciMax            = parseFloat(args['ci-max']   ?? String(cfg['CI_MAX'] ?? 0));
   const ciBuyOnly        = (args['ci-buy-only'] ?? 'false') === 'true';
   const maxConsecLossDays   = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
   const epD1Align           = (args['ep-d1-align'] ?? 'false') === 'true';
@@ -172,6 +172,8 @@ async function main(): Promise<void> {
   const epDiTf    = (epDiTfRaw === 'H4' || epDiTfRaw === 'D1') ? epDiTfRaw : undefined;
   const epDiMinGap          = parseFloat(args['ep-di-gap'] ?? '0');
   const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
+  const epAdxMax            = parseFloat(args['ep-adx-max'] ?? String(cfg['EP_ADX_MAX'] ?? 0));
+  const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
@@ -214,6 +216,8 @@ async function main(): Promise<void> {
     epDiTf,
     epDiMinGap,
     spreadPoints,
+    epAdxMax,
+    tpRr,
   });
 
   printReport(report);

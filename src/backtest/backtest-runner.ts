@@ -69,6 +69,8 @@ export interface BacktestParams {
   epDiTf?: 'H4' | 'D1'; // timeframe for +DI/-DI directional filter ('' = off)
   epDiMinGap?: number;  // minimum +DI/-DI gap to enforce direction (0 = any gap)
   spreadPoints?: number; // ask-bid spread: added to BUY entry, subtracted from SELL entry
+  epAdxMax?: number;    // 0=off; >0 skip EP signals when H4 ADX exceeds this (overextended trend)
+  tpRr?: number;        // TP multiplier on SL distance (default 2 = 2:1 R:R)
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -263,6 +265,8 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     maxConsecLossDays = 0,
     epD1Align = false, epDiTf, epDiMinGap = 0,
     spreadPoints = 0,
+    epAdxMax = 0,
+    tpRr = 2,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -361,7 +365,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       direction,
       entryPrice,
       stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * 2 : entryPrice - slDist * 2,
+      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
     };
   }
 
@@ -389,7 +393,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       direction,
       entryPrice,
       stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * 2 : entryPrice - slDist * 2,
+      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
     };
   }
 
@@ -494,6 +498,12 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       if (adx === null || adx < epAdxMin) return null;
     }
 
+    // ADX on H4: skip if trend is overextended (too strong = mean-reversion risk)
+    if (epAdxMax > 0) {
+      const adx = adxEngine.last(h4, epAdxPeriod);
+      if (adx !== null && adx > epAdxMax) return null;
+    }
+
     // ADX on H1: skip if H1 trend lacks conviction
     if (epH1AdxMin > 0) {
       const adxH1 = adxEngine.last(h1, epAdxPeriod);
@@ -529,7 +539,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       direction,
       entryPrice,
       stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * 2 : entryPrice - slDist * 2,
+      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
     };
   }
 

@@ -1,14 +1,14 @@
 {
-  "SYMBOL": "EURUSD",
+  "SYMBOL": "EURUSDm",
   "MT5_TERMINAL_PATH": "C:\\Program Files\\MetaTrader 5_2\\terminal64.exe",
   "RISK_PERCENT": 0.1,
   "LIVE_TRADING": false,
-  "SIGNAL_COOLDOWN_MINUTES": 15,
+  "SIGNAL_COOLDOWN_MINUTES": 60,
   "MAX_DAILY_TRADES": 0,
   "MAX_CONSEC_LOSSES": 0,
   "MAX_CONSEC_LOSS_DAYS": 0,
-  "TELEGRAM_ENABLED": true,
-  "LICENSE_KEY": "d64c2c89-8159-453d-a7c2-aaba6cd42f1e",
+  "TELEGRAM_ENABLED": false,
+  "LICENSE_KEY": "9a5ed7a9-8360-4358-89aa-f3c660b48d0e",
   "BLOCKED_HOURS": [
     {
       "from": "17:00",
@@ -16,6 +16,7 @@
       "label": "Asian session (low liquidity)"
     }
   ],
+  "SPREAD_POINTS": 0.0001,
   "MIN_SL_POINTS": 0.001,
   "MIN_FVG_POINTS": 0.0002,
   "ZONE_PROXIMITY_POINTS": 0.0015,
@@ -25,11 +26,14 @@
   "EP_SKIP_MONDAY": false,
   "EP_MIN_HOUR": 0,
   "EP_MAX_HOUR": 0,
-  "EP_H4_ALIGN": false,
+  "EP_H4_ALIGN": true,
   "EP_ADX_PERIOD": 14,
   "EP_ADX_MIN": 0.0,
+  "EP_ADX_MAX": 25,
+  "ZB_ENABLED": false,
+  "CI_MAX": 61.8,
   "BE_AT_POINTS": 0.0,
-  "BE_BUFFER_POINTS": 0.00005,
+  "BE_BUFFER_POINTS": 5e-05,
   "PARTIAL_TP_ENABLED": false,
   "SEMI_AUTO_MODE": false
 }
