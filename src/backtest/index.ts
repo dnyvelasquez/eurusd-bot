@@ -174,6 +174,7 @@ async function main(): Promise<void> {
   const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
   const epAdxMax            = parseFloat(args['ep-adx-max'] ?? String(cfg['EP_ADX_MAX'] ?? 0));
   const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
+  const maxDailyLosses      = parseInt(args['max-daily-losses'] ?? String(cfg['MAX_DAILY_LOSSES'] ?? 0), 10);
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
@@ -218,6 +219,7 @@ async function main(): Promise<void> {
     spreadPoints,
     epAdxMax,
     tpRr,
+    maxDailyLosses,
   });
 
   printReport(report);

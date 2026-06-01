@@ -71,6 +71,7 @@ export interface BacktestParams {
   spreadPoints?: number; // ask-bid spread: added to BUY entry, subtracted from SELL entry
   epAdxMax?: number;    // 0=off; >0 skip EP signals when H4 ADX exceeds this (overextended trend)
   tpRr?: number;        // TP multiplier on SL distance (default 2 = 2:1 R:R)
+  maxDailyLosses?: number; // 0=off; >0 stop trading for the rest of the day after N losses
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -267,6 +268,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     spreadPoints = 0,
     epAdxMax = 0,
     tpRr = 2,
+    maxDailyLosses = 0,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -565,6 +567,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   let circuitDay     = '';  // ET day when circuit breaker is active
   let consecBadDays  = 0;  // consecutive days where circuit breaker fired
   let pauseUntilMon  = false;
+  let dailyLossCount = 0;  // total losses today (resets each day)
 
   console.log(`\nReplaying ${m5Candles.length} M5 candles...`);
 
@@ -603,11 +606,13 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       currentDayKey = dk;
       dayRefBalance = balance;
       circuitDay = '';
+      dailyLossCount = 0;
       // Pre-block day if already in losing streak (cross-day consecutive loss guard)
       if (maxConsecLosses > 0 && consecLosses >= maxConsecLosses) circuitDay = dk;
     }
     if (pauseUntilMon) continue;
     if (maxConsecLosses > 0 && circuitDay === dk) continue;
+    if (maxDailyLosses > 0 && dailyLossCount >= maxDailyLosses) continue;
 
     const d1Window = d1Candles.slice(0, d1Ptr);
     const h4Window = h4Candles.slice(0, h4Ptr);
@@ -690,9 +695,10 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     lastSignalTime.set(direction, currentTime);
     if (outcome.closeTime !== null) lastTradeCloseTime = outcome.closeTime;
 
-    // Update consecutive loss circuit breaker
+    // Update circuit breakers
     if (outcome.result === 'LOSS') {
       consecLosses++;
+      dailyLossCount++;
       if (maxConsecLosses > 0 && consecLosses >= maxConsecLosses) circuitDay = dk;
     } else if (outcome.result === 'WIN') {
       consecLosses = 0;
