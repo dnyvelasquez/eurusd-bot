@@ -6,7 +6,7 @@ import { logger } from '@infra/logger/logger';
 
 async function bootstrap(): Promise<void> {
   logger.info('=================================');
-  logger.info('SPX500 BOT INITIALIZING');
+  logger.info('EURUSD BOT INITIALIZING');
   logger.info(`ENVIRONMENT: ${env.NODE_ENV}`);
   logger.info('=================================');
 

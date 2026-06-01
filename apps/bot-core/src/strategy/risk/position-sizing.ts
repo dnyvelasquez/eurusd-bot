@@ -26,8 +26,14 @@ export class PositionSizing {
     const riskRewardRatio =
       targetDistance / stopDistance;
 
+    const stopDistanceInTicks =
+      stopDistance / params.tradeTickSize;
+
+    const dollarRiskPerLot =
+      stopDistanceInTicks * params.tradeTickValue;
+
     const positionSize =
-      riskAmount / stopDistance;
+      riskAmount / dollarRiskPerLot;
 
     return {
       riskAmount,

@@ -80,6 +80,8 @@ export class Application {
   private openPositionTickets = new Set<number>();
   private mt5Login = 0;
   private lastKnownBalance = 0;
+  private symbolTickSize = 1;
+  private symbolTickValue = 1;
   private bridgeDown = false;
   private marketOpen = false;
   private approvalPending = false;
@@ -98,6 +100,8 @@ export class Application {
     logger.info('Application starting...');
 
     await this.validateLicense();
+
+    await this.loadSymbolInfo();
 
     await this.journal.initialize();
 
@@ -155,6 +159,25 @@ export class Application {
       const reason = err instanceof Error ? err.message : String(err);
       logger.error({ reason }, 'License validation failed — bot will not start');
       throw err;
+    }
+  }
+
+  private async loadSymbolInfo(): Promise<void> {
+    const symbol = configService.symbol;
+    try {
+      const res = await this.mt5.getSymbolInfo(symbol);
+      if (res.success && res.data) {
+        this.symbolTickSize = res.data.tradeTickSize;
+        this.symbolTickValue = res.data.tradeTickValue;
+        logger.info(
+          { symbol, tickSize: this.symbolTickSize, tickValue: this.symbolTickValue },
+          'Symbol info loaded',
+        );
+      } else {
+        logger.warn({ symbol }, 'Could not load symbol info — using fallback tick values');
+      }
+    } catch {
+      logger.warn({ symbol }, 'Symbol info fetch failed — using fallback tick values');
     }
   }
 
@@ -756,6 +779,8 @@ export class Application {
       entryPrice,
       stopLoss,
       target: takeProfit,
+      tradeTickSize: this.symbolTickSize,
+      tradeTickValue: this.symbolTickValue,
     });
 
     if (sizing.riskRewardRatio < 2) {

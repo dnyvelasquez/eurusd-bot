@@ -138,7 +138,7 @@ export class TelegramService {
     const mode = liveTrading ? 'LIVE 🔴' : 'PAPER 🟡';
 
     await this.send(
-      `🤖 <b>SPX500 Bot iniciado</b>\n` +
+      `🤖 <b>EURUSD Bot iniciado</b>\n` +
       `Símbolo: <code>${symbol}</code> | Riesgo: ${riskPercent}% | ${mode}`,
     );
   }

@@ -6,14 +6,14 @@ async function main() {
     new MT5Service();
 
   const tick =
-    await mt5.getTick("SPX500");
+    await mt5.getTick("EURUSD");
 
   console.log("\nTICK:");
   console.log(tick);
 
   const candles =
     await mt5.getCandles(
-      "SPX500",
+      "EURUSD",
       "M5",
       5
     );

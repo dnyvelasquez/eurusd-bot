@@ -30,15 +30,15 @@ engine.on(
 );
 
 engine.execute({
-  symbol: 'SPX500',
+  symbol: 'EURUSD',
 
   side: 'SELL',
 
   volume: 1,
 
-  entryPrice: 7480,
+  entryPrice: 1.10000,
 
-  stopLoss: 7500,
+  stopLoss: 1.10200,
 
-  takeProfit: 7440,
+  takeProfit: 1.09600,
 });

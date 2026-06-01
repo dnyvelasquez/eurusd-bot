@@ -8,6 +8,10 @@ export interface RiskParameters {
   stopLoss: number;
 
   target: number;
+
+  tradeTickSize: number;
+
+  tradeTickValue: number;
 }
 
 export interface PositionSizingResult {

@@ -7,10 +7,7 @@ import type { BlockedWindow } from '@infra/session/session-guard';
 import { env } from './env';
 
 const DEFAULT_BLOCKED_HOURS: BlockedWindow[] = [
-  { from: '09:30', to: '09:35', label: 'NY Open' },
-  { from: '12:00', to: '13:00', label: 'NY Lunch' },
-  { from: '15:45', to: '16:00', label: 'NY Close' },
-  { from: '16:00', to: '09:30', label: 'Out of market' },
+  { from: '17:00', to: '03:00', label: 'Asian session (low liquidity)' },
 ];
 
 interface BotConfig {

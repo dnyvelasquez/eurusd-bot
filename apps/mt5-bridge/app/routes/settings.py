@@ -41,10 +41,7 @@ def get_bot_status():
 # ── Bot settings ──────────────────────────────────────────────────────────────
 
 DEFAULT_BLOCKED_HOURS = [
-    {"from": "09:30", "to": "09:35", "label": "NY Open"},
-    {"from": "12:00", "to": "13:00", "label": "NY Lunch"},
-    {"from": "15:45", "to": "16:00", "label": "NY Close"},
-    {"from": "16:00", "to": "09:30", "label": "Out of market"},
+    {"from": "17:00", "to": "03:00", "label": "Asian session (low liquidity)"},
 ]
 
 
@@ -57,7 +54,7 @@ class BlockedWindow(BaseModel):
 
 
 class BotSettings(BaseModel):
-    SYMBOL: str = Field(default="SPX500")
+    SYMBOL: str = Field(default="EURUSD")
     RISK_PERCENT: float = Field(default=1.0, ge=0.1, le=10.0)
     LIVE_TRADING: bool = Field(default=False)
     SIGNAL_COOLDOWN_MINUTES: int = Field(default=30, ge=1, le=1440)
@@ -279,7 +276,7 @@ def test_telegram():
     url = f"https://api.telegram.org/bot{cfg.token}/sendMessage"
     body = json.dumps({
         "chat_id": cfg.chat_id,
-        "text": "🤖 SPX500 Bot — prueba de conexión Telegram exitosa",
+        "text": "🤖 EURUSD Bot — prueba de conexión Telegram exitosa",
         "parse_mode": "HTML",
     }).encode()
 

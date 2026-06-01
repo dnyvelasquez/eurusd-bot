@@ -33,7 +33,7 @@ async function main() {
   setInterval(async () => {
 
     await market.syncSymbol(
-      "SPX500"
+      "EURUSD"
     );
     
   }, 5000);

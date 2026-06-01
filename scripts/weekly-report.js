@@ -1,5 +1,5 @@
 const fs = require('fs');
-const data = JSON.parse(fs.readFileSync('C:/spx500-bot/backtest-SPX500-2026-01-01-2026-05-26.json', 'utf-8'));
+const data = JSON.parse(fs.readFileSync('C:/eurusd-bot/backtest-EURUSD-2026-01-01-2026-05-26.json', 'utf-8'));
 const trades = data.trades;
 
 function weekLabel(dateStr) {
@@ -61,8 +61,8 @@ const retorno = ((totalPnl / data.initialBalance) * 100).toFixed(1);
 const pnlSign = totalPnl >= 0 ? '+' : '';
 
 console.log('\n' + SEP);
-console.log(' SPX500 Bot -- Informe de Backtest | ' + data.from + ' -> ' + data.to);
-console.log(' Config: Risk ' + data.riskPercent + '%  |  Cooldown ' + data.cooldownMinutes + ' min  |  EP_MIN_HOUR=10  |  EP_SKIP_MONDAY=true  |  EMA_SPREAD_MIN=12  |  EP_MAX_HOUR=13');
+console.log(' EURUSD Bot -- Informe de Backtest | ' + data.from + ' -> ' + data.to);
+console.log(' Config: Risk ' + data.riskPercent + '%  |  Cooldown ' + data.cooldownMinutes + ' min  |  EP_MIN_HOUR=3  |  EP_SKIP_MONDAY=false  |  EMA_SPREAD_MIN=0.0005  |  EP_MAX_HOUR=17');
 console.log(' Balance: $' + data.initialBalance.toFixed(2) + ' -> $' + finalBalance.toFixed(2) + '   |  Total P&L: ' + pnlSign + '$' + totalPnl.toFixed(2) + '   |  Retorno: ' + pnlSign + retorno + '%');
 console.log(SEP);
 

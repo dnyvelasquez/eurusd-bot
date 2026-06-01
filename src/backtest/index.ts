@@ -75,7 +75,7 @@ function printReport(r: BacktestReport): void {
   const pnlSign = r.metrics.totalPnl >= 0 ? '+' : '';
 
   console.log('\n' + SEP);
-  console.log(` SPX500 Bot — Backtest │ ${r.symbol}  ${r.from} → ${r.to}`);
+  console.log(` EURUSD Bot — Backtest │ ${r.symbol}  ${r.from} → ${r.to}`);
   console.log(` Balance: $${r.initialBalance.toFixed(2)} → $${r.finalBalance.toFixed(2)}  │  Risk: ${r.riskPercent}%  │  Cooldown: ${r.cooldownMinutes} min  │  Spread: ${r.spreadPoints ?? 0} pts`);
   console.log(SEP);
 
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const cfg = readConfig();
 
-  const symbol    = args['symbol']    ?? (cfg['SYMBOL'] as string | undefined)   ?? 'SPX500';
+  const symbol    = args['symbol']    ?? (cfg['SYMBOL'] as string | undefined)   ?? 'EURUSD';
   const from      = args['start']    ?? args['from'];
   const to        = args['end']      ?? args['to'];
   const balance   = parseFloat(args['balance']   ?? '10000');
@@ -173,7 +173,7 @@ async function main(): Promise<void> {
   const epDiMinGap          = parseFloat(args['ep-di-gap'] ?? '0');
   const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
   if (!from || !to) {
-    console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol SPX500] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 20]\n');
+    console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
   }
 

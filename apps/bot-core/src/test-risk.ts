@@ -33,9 +33,13 @@ engine.analyze({
 
   riskPercent: 1,
 
-  entryPrice: 7390,
+  entryPrice: 1.10000,
 
-  stopLoss: 7400,
+  stopLoss: 1.09900,
 
-  target: 7360,
+  target: 1.10200,
+
+  tradeTickSize: 0.00001,
+
+  tradeTickValue: 1.0,
 });

@@ -15,6 +15,30 @@ TIMEFRAMES = {
 class MT5Client:
 
     @staticmethod
+    def _get_filling_mode(symbol: str):
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return mt5.ORDER_FILLING_IOC
+        filling = info.filling_mode
+        if filling & 1:
+            return mt5.ORDER_FILLING_FOK
+        if filling & 2:
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
+
+    @staticmethod
+    def get_symbol_info(symbol: str):
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return None
+        return {
+            "point": float(info.point),
+            "tradeTickSize": float(info.trade_tick_size),
+            "tradeTickValue": float(info.trade_tick_value),
+            "tradeContractSize": float(info.trade_contract_size),
+        }
+
+    @staticmethod
     def connect():
 
         if mt5.initialize():
@@ -205,9 +229,9 @@ class MT5Client:
             "price": float(price),
             "deviation": 20,
             "magic": 777,
-            "comment": "SPX500 BOT partial TP",
+            "comment": "EURUSD BOT partial TP",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
+            "type_filling": MT5Client._get_filling_mode(symbol),
         }
 
         result = mt5.order_send(request)
@@ -244,9 +268,9 @@ class MT5Client:
             "price": float(price),
             "deviation": 20,
             "magic": 777,
-            "comment": "SPX500 BOT EOD close",
+            "comment": "EURUSD BOT EOD close",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
+            "type_filling": MT5Client._get_filling_mode(symbol),
         }
 
         result = mt5.order_send(request)
@@ -293,9 +317,9 @@ class MT5Client:
             "tp": float(take_profit),
             "deviation": 20,
             "magic": 777,
-            "comment": "SPX500 BOT",
+            "comment": "EURUSD BOT",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK
+            "type_filling": MT5Client._get_filling_mode(symbol)
         }
 
         result = mt5.order_send(request)

@@ -1,22 +1,22 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-  SPX500 Bot - Production Installer
+  EURUSD Bot - Production Installer
 
 .USAGE
   Option A - from cloned repo:
     .\install.ps1
 
   Option B - fresh machine (clones and configures everything):
-    irm https://raw.githubusercontent.com/dnyvelasquez/spx500-bot/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/dnyvelasquez/eurusd-bot/main/install.ps1 | iex
 
 #>
 
 $ErrorActionPreference = 'Stop'
-$REPO_URL    = 'https://github.com/dnyvelasquez/spx500-bot.git'
-$DEFAULT_DIR = 'C:\spx500-bot'
-$TASK_BRIDGE = 'spx500-bridge'
-$TASK_BOT    = 'spx500-bot'
+$REPO_URL    = 'https://github.com/dnyvelasquez/eurusd-bot.git'
+$DEFAULT_DIR = 'C:\eurusd-bot'
+$TASK_BRIDGE = 'eurusd-bridge'
+$TASK_BOT    = 'eurusd-bot'
 
 function Step { param($msg) Write-Host "`n[>>] $msg" -ForegroundColor Cyan }
 function OK   { param($msg) Write-Host "  OK  $msg" -ForegroundColor Green }
@@ -30,7 +30,7 @@ if (-not $isAdmin) { Fail 'Run PowerShell as Administrator and try again.' }
 
 Write-Host ''
 Write-Host '==========================================' -ForegroundColor Cyan
-Write-Host '   SPX500 Bot  -  Production Installer   ' -ForegroundColor Cyan
+Write-Host '   EURUSD Bot  -  Production Installer   ' -ForegroundColor Cyan
 Write-Host '==========================================' -ForegroundColor Cyan
 
 # -- repo
@@ -197,7 +197,7 @@ Register-ScheduledTask `
     -Action      $bridgeAction `
     -Settings    $settingsCommon `
     -RunLevel    Highest `
-    -Description 'SPX500 Bot - MT5 Bridge (FastAPI/uvicorn)' | Out-Null
+    -Description 'EURUSD Bot - MT5 Bridge (FastAPI/uvicorn)' | Out-Null
 OK "Task '$TASK_BRIDGE' registered (manual start only)"
 
 # bot
@@ -213,7 +213,7 @@ Register-ScheduledTask `
     -Action      $botAction `
     -Settings    $settingsCommon `
     -RunLevel    Highest `
-    -Description 'SPX500 Bot - Trading Engine (Node.js)' | Out-Null
+    -Description 'EURUSD Bot - Trading Engine (Node.js)' | Out-Null
 OK "Task '$TASK_BOT' registered (manual start only)"
 
 # -- done

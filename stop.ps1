@@ -5,8 +5,8 @@
   Uso: .\stop.ps1
 #>
 
-$TASK_BRIDGE = 'spx500-bridge'
-$TASK_BOT    = 'spx500-bot'
+$TASK_BRIDGE = 'eurusd-bridge'
+$TASK_BOT    = 'eurusd-bot'
 
 function TaskState($name) {
     $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
@@ -15,7 +15,7 @@ function TaskState($name) {
 }
 
 Write-Host ''
-Write-Host '[SPX500 Bot] Deteniendo servicios...' -ForegroundColor Cyan
+Write-Host '[EURUSD Bot] Deteniendo servicios...' -ForegroundColor Cyan
 
 # Stop bot first (before bridge)
 if ((TaskState $TASK_BOT) -eq 'Running') {

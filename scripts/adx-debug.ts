@@ -6,11 +6,11 @@ async function main() {
   const adxEngine = new ADXEngine();
   const [r1, r4] = await Promise.all([
     axios.get<{ success: boolean; data: Candle[] }>(
-      'http://127.0.0.1:8000/api/trading/candles/SPX500/H1/range',
+      'http://127.0.0.1:8000/api/trading/candles/EURUSD/H1/range',
       { params: { from_date: '2026-01-01', to_date: '2026-03-01' }, timeout: 30000 },
     ),
     axios.get<{ success: boolean; data: Candle[] }>(
-      'http://127.0.0.1:8000/api/trading/candles/SPX500/H4/range',
+      'http://127.0.0.1:8000/api/trading/candles/EURUSD/H4/range',
       { params: { from_date: '2025-10-01', to_date: '2026-03-01' }, timeout: 30000 },
     ),
   ]);

@@ -6,8 +6,8 @@
 
 $ErrorActionPreference = 'Stop'
 $REPO_DIR    = $PSScriptRoot
-$TASK_BRIDGE = 'spx500-bridge'
-$TASK_BOT    = 'spx500-bot'
+$TASK_BRIDGE = 'eurusd-bridge'
+$TASK_BOT    = 'eurusd-bot'
 
 function TaskState($name) {
     $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
@@ -16,7 +16,7 @@ function TaskState($name) {
 }
 
 Write-Host ''
-Write-Host '[SPX500 Bot] Actualizando...' -ForegroundColor Cyan
+Write-Host '[EURUSD Bot] Actualizando...' -ForegroundColor Cyan
 Set-Location $REPO_DIR
 
 # 1. Stop services

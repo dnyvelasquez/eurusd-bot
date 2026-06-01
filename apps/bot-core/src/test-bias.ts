@@ -14,7 +14,7 @@ async function main() {
 
   const response =
     await mt5.getCandles(
-      "SPX500",
+      "EURUSD",
       "H1",
       200
     );

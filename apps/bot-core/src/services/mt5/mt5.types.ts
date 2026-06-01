@@ -81,3 +81,16 @@ export interface PartialCloseResponse {
   success: boolean;
   message?: string;
 }
+
+export interface SymbolInfo {
+  point: number;
+  tradeTickSize: number;
+  tradeTickValue: number;
+  tradeContractSize: number;
+}
+
+export interface SymbolInfoResponse {
+  success: boolean;
+  data?: SymbolInfo;
+  message?: string;
+}

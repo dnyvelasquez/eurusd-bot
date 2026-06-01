@@ -63,6 +63,17 @@ def get_positions(symbol: str):
     }
 
 
+@router.get("/symbol-info/{symbol}")
+def get_symbol_info(symbol: str):
+    connected = MT5Client.connect()
+    if not connected:
+        return {"success": False, "message": "MT5 not connected"}
+    info = MT5Client.get_symbol_info(symbol)
+    if info is None:
+        return {"success": False, "message": f"Symbol {symbol} not found"}
+    return {"success": True, "symbol": symbol, "data": info}
+
+
 @router.get("/tick/{symbol}")
 def get_tick(symbol: str):
 

@@ -3,7 +3,7 @@ import { PositionMonitor } from '../../apps/bot-core/src/services/execution/posi
 
 const buyPosition = {
   ticket: 1,
-  symbol: 'US500',
+  symbol: 'EURUSD',
   type: 'BUY' as const,
   volume: 0.01,
   priceOpen: 5000,

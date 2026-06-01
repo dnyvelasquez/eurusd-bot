@@ -54,6 +54,8 @@ export interface BacktestParams {
   epMinSlPoints?: number;
   epSkipMonday?: boolean;
   epMinHour?: number;
+  symbolTickSize?: number;
+  symbolTickValue?: number;
   epMaxHour?: number;
   epAdxPeriod?: number;
   epAdxMin?: number;
@@ -654,6 +656,8 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       entryPrice: signalEntry,
       stopLoss,
       target: takeProfit,
+      tradeTickSize: params.symbolTickSize ?? 0.00001,
+      tradeTickValue: params.symbolTickValue ?? 1.0,
     });
     if (sizing.riskRewardRatio < 2) continue;
     // Actual fill price: BUY pays ask (close + spread), SELL receives bid (close − spread)

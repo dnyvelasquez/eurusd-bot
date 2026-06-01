@@ -1,4 +1,4 @@
--- SPX500 Bot — Tabla de licencias
+-- EURUSD Bot — Tabla de licencias
 -- Ejecutar en: Neon Dashboard → SQL Editor
 
 create table public.licenses (

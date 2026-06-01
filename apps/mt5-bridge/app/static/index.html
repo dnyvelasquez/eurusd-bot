@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SPX500 Bot — Dashboard</title>
+  <title>EURUSD Bot — Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -437,7 +437,7 @@
 <body>
 
 <header>
-  <h1>SPX500 Bot</h1>
+  <h1>EURUSD Bot</h1>
   <span class="version">Dashboard</span>
   <img src="/DVShark.svg" alt="Logo" class="logo" />
 </header>
@@ -512,7 +512,7 @@
   <div class="fields-row">
     <div class="field">
       <label for="symbol">Símbolo (MT5)</label>
-      <input type="text" id="symbol" placeholder="US500" autocomplete="off" />
+      <input type="text" id="symbol" placeholder="EURUSD" autocomplete="off" />
     </div>
     <div class="field">
       <label for="risk">Riesgo por operación (%)</label>
@@ -883,7 +883,7 @@
   }
 
   function applyToForm(cfg) {
-    $('symbol').value       = cfg.SYMBOL ?? 'SPX500';
+    $('symbol').value       = cfg.SYMBOL ?? 'EURUSD';
     $('risk').value         = cfg.RISK_PERCENT ?? 1;
     $('cooldown').value     = cfg.SIGNAL_COOLDOWN_MINUTES ?? 30;
 $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
