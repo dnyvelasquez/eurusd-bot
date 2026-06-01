@@ -55,6 +55,7 @@ class BlockedWindow(BaseModel):
 
 class BotSettings(BaseModel):
     SYMBOL: str = Field(default="EURUSD")
+    MT5_TERMINAL_PATH: str = Field(default="")
     RISK_PERCENT: float = Field(default=1.0, ge=0.1, le=10.0)
     LIVE_TRADING: bool = Field(default=False)
     SIGNAL_COOLDOWN_MINUTES: int = Field(default=30, ge=1, le=1440)

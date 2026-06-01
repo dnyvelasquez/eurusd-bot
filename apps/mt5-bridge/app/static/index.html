@@ -525,6 +525,11 @@
   </div>
 
   <div class="field">
+    <label for="mt5-terminal-path">Instancia MT5 — ruta al terminal <span style="color:var(--muted);font-weight:400">(vacío = detección automática)</span></label>
+    <input type="text" id="mt5-terminal-path" placeholder="C:\Program Files\MetaTrader 5 Exness\terminal64.exe" autocomplete="off" style="font-family:monospace;font-size:0.85em" />
+  </div>
+
+  <div class="field">
     <label for="max-consec-losses">Circuit breaker <span style="color:var(--muted);font-weight:400">(0 = desactivado)</span></label>
     <div class="limit-row">
       <input type="number" id="max-consec-losses" min="0" max="10" step="1" />
@@ -883,7 +888,8 @@
   }
 
   function applyToForm(cfg) {
-    $('symbol').value       = cfg.SYMBOL ?? 'EURUSD';
+    $('symbol').value             = cfg.SYMBOL ?? 'EURUSD';
+    $('mt5-terminal-path').value  = cfg.MT5_TERMINAL_PATH ?? '';
     $('risk').value         = cfg.RISK_PERCENT ?? 1;
     $('cooldown').value     = cfg.SIGNAL_COOLDOWN_MINUTES ?? 30;
 $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
@@ -919,6 +925,7 @@ $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
   $('btn-save').addEventListener('click', async () => {
     const payload = {
       SYMBOL:                      $('symbol').value.trim().toUpperCase(),
+      MT5_TERMINAL_PATH:           $('mt5-terminal-path').value.trim(),
       RISK_PERCENT:                parseFloat($('risk').value),
       LIVE_TRADING:                $('live-trading').checked,
       SIGNAL_COOLDOWN_MINUTES:     parseInt($('cooldown').value, 10),
