@@ -319,6 +319,8 @@
       flex: unset;
     }
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-edit.danger { color: var(--red); border-color: rgba(239,68,68,.3); }
+    .btn-edit.danger:hover { border-color: var(--red); color: var(--red); }
 
     /* Settings top row — symbol, risk, cooldown */
     .fields-row {
@@ -458,6 +460,7 @@
     <span class="status-text" id="bot-status-text">Comprobando…</span>
     <span class="status-detail" id="bot-status-detail"></span>
   </div>
+  <div id="bot-reason-banner" style="display:none;margin-top:12px;font-size:13px;padding:10px 14px;border-radius:6px;border:1px solid"></div>
 </div>
 
 <!-- License activation -->
@@ -700,7 +703,10 @@
 <div class="card">
   <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
     <span>Journal</span>
-    <button class="btn-edit" onclick="loadJournal()">Actualizar</button>
+    <span style="display:flex;gap:8px">
+      <button class="btn-edit danger" onclick="resetJournal()">Resetear</button>
+      <button class="btn-edit" onclick="loadJournal()">Actualizar</button>
+    </span>
   </div>
 
   <div class="stats-row">
@@ -787,21 +793,41 @@
   }
 
   // ── Bot trading status ────────────────────────────────────────────────────
+  function setBotBanner(reason, type) {
+    const el = $('bot-reason-banner');
+    if (!reason) { el.style.display = 'none'; return; }
+    el.textContent = reason;
+    el.style.display = 'block';
+    if (type === 'warn') {
+      el.style.background  = 'rgba(245,158,11,.08)';
+      el.style.borderColor = 'rgba(245,158,11,.3)';
+      el.style.color       = 'var(--yellow)';
+    } else {
+      el.style.background  = 'rgba(239,68,68,.08)';
+      el.style.borderColor = 'rgba(239,68,68,.3)';
+      el.style.color       = 'var(--red)';
+    }
+  }
+
   async function checkBotStatus() {
     try {
       const r = await fetch(`${API}/status`);
       const d = await r.json();
 
-      const dot  = $('bot-dot');
-      const text = $('bot-status-text');
+      const dot    = $('bot-dot');
+      const text   = $('bot-status-text');
       const detail = $('bot-status-detail');
+      detail.textContent = '';
 
       if (!d.available) {
-        dot.className = 'dot';
-        text.textContent = 'Bot no disponible';
-        detail.textContent = d.reason ?? '';
+        const inactive = d.reason === 'Bot sin actividad reciente';
+        dot.className = inactive ? 'dot yellow' : 'dot';
+        text.textContent = inactive ? 'Bot inactivo' : 'Bot no iniciado';
+        setBotBanner(inactive ? d.reason : null, 'warn');
         return;
       }
+
+      setBotBanner(null);
 
       if (d.metrics) {
         updateTradesGauge(d.metrics.dailyTrades ?? 0, d.metrics.maxDailyTrades ?? 0);
@@ -811,20 +837,19 @@
       if (d.ready) {
         dot.className = 'dot green';
         text.textContent = 'Listo para operar';
-        detail.textContent = '';
       } else if (d.reason === 'Mercado cerrado') {
         dot.className = 'dot yellow';
         text.textContent = 'Mercado cerrado';
-        detail.textContent = '';
       } else {
         dot.className = 'dot red';
         text.textContent = 'Bloqueado';
-        detail.textContent = d.reason ?? '';
+        setBotBanner(d.reason, 'error');
       }
     } catch {
       $('bot-dot').className = 'dot';
-      $('bot-status-text').textContent = 'Bot no disponible';
+      $('bot-status-text').textContent = 'Bot no iniciado';
       $('bot-status-detail').textContent = '';
+      setBotBanner(null);
     }
   }
 
@@ -1196,6 +1221,22 @@ $('max-daily-trades').value    = cfg.MAX_DAILY_TRADES ?? 0;
       }
     } catch {
       $('journal-table-wrap').innerHTML = '<div class="journal-empty" style="color:var(--red)">Error al cargar el journal</div>';
+    }
+  }
+
+  async function resetJournal() {
+    if (!confirm('¿Borrar todo el historial de trades? Esta acción no se puede deshacer.')) return;
+    try {
+      const r = await fetch(`${API}/journal/trades`, { method: 'DELETE' });
+      const json = await r.json();
+      if (r.ok && json.success) {
+        toast('Historial eliminado', 'ok');
+        loadJournal();
+      } else {
+        toast(json.detail || 'Error al resetear', 'err');
+      }
+    } catch {
+      toast('Error de conexión', 'err');
     }
   }
 

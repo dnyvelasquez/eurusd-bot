@@ -7,7 +7,7 @@
   "MAX_CONSEC_LOSSES": 2,
   "MAX_CONSEC_LOSS_DAYS": 2,
   "TELEGRAM_ENABLED": false,
-  "LICENSE_KEY": "d64c2c89-8159-453d-a7c2-aaba6cd42f1e",
+  "LICENSE_KEY": "1e7e4bf5-a6cb-45a3-a201-ac6102335104",
   "BLOCKED_HOURS": [
     {
       "from": "09:30",

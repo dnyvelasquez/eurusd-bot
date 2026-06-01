@@ -28,7 +28,7 @@ export class LicenseService {
 
     logger.info({ login: mt5Login }, 'Validating license...');
 
-    const sql = postgres(env.DATABASE_URL, { ssl: 'require', max: 1 });
+    const sql = postgres(env.DATABASE_URL, { ssl: 'require', max: 1, connect_timeout: 5 });
 
     try {
       const rows = await sql<LicenseRecord[]>`
@@ -62,9 +62,60 @@ export class LicenseService {
       );
 
       this.writeCache(license, mt5Login, tradeMode);
+    } catch (err: unknown) {
+      if (this.isConnectionError(err)) {
+        logger.warn({ err }, 'DB unreachable — falling back to license cache');
+        this.validateFromCache(mt5Login, tradeMode);
+        return;
+      }
+      throw err;
     } finally {
-      await sql.end();
+      await sql.end({ timeout: 3 });
     }
+  }
+
+  private isConnectionError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message.toLowerCase();
+    return (
+      msg.includes('timeout') ||
+      msg.includes('connect') ||
+      msg.includes('econnrefused') ||
+      msg.includes('etimedout') ||
+      msg.includes('enotfound')
+    );
+  }
+
+  private validateFromCache(mt5Login: number, tradeMode: 'DEMO' | 'CONTEST' | 'REAL'): void {
+    if (!fs.existsSync(CACHE_PATH)) {
+      throw new Error('License DB unreachable and no local cache found — validate once when DB is available');
+    }
+
+    let cached: LicenseRecord & { mt5_account: number; validated_at: string };
+    try {
+      cached = JSON.parse(fs.readFileSync(CACHE_PATH, 'utf-8'));
+    } catch {
+      throw new Error('License cache is corrupted and DB is unreachable');
+    }
+
+    if (!cached.active) throw new Error('License is inactive — contact the administrator');
+
+    if (cached.expires_at && new Date(cached.expires_at) < new Date()) {
+      throw new Error(`License expired on ${cached.expires_at}`);
+    }
+
+    if (Number(cached.mt5_account) !== mt5Login) {
+      throw new Error(
+        `Account mismatch — license is for ${cached.mt5_account}, connected account is ${mt5Login}`,
+      );
+    }
+
+    this.validateMode(cached.allowed_mode, tradeMode);
+
+    logger.warn(
+      { owner: cached.owner_name, login: mt5Login, mode: cached.allowed_mode, cachedAt: cached.validated_at },
+      'License validated from cache (DB temporarily unreachable)',
+    );
   }
 
   private writeCache(license: LicenseRecord, mt5Login: number, tradeMode: string): void {

@@ -159,7 +159,7 @@ def validate_license(body: ValidateRequest):
 
     # ── 2. Consultar Neon ─────────────────────────────────────────────────────
     try:
-        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor, connect_timeout=5)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Cannot connect to database: {exc}") from exc
 

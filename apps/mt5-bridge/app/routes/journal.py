@@ -102,3 +102,18 @@ def get_stats():
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.delete("/trades")
+def reset_trades():
+    try:
+        conn = _get_conn()
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE TABLE trades RESTART IDENTITY")
+        conn.commit()
+        conn.close()
+        return {"success": True, "message": "Journal cleared"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
