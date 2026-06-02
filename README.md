@@ -96,37 +96,37 @@ El backtest incluye implementaciones de estrategias experimentales que pueden ac
 
 ### Ventanas de operación (hora ET)
 
-El bot opera en **tres franjas** separadas por zonas de baja calidad de señal. La franja de mayor calidad es la tarde de NY (13:00–17:00).
+El bot opera en **dos franjas activas** separadas por zonas de baja calidad de señal, determinadas por análisis histórico de 16 meses.
 
 | Franja | Horario ET | Descripción |
 |---|---|---|
-| 🟢 **London** | 03:00 – 11:00 | Sesión de Londres activa |
+| 🔴 Bloqueado | 17:00 – 06:00 | Sesión asiática + apertura temprana Londres (price discovery, dirección no establecida) |
+| 🟢 **London activo** | 06:00 – 11:00 | Mid-London: dirección del día establecida, volumen institucional real |
 | 🔴 Bloqueado | 11:00 – 13:00 | NY Lunch — volumen bajo, movimientos falsos |
-| 🟢 **NY tarde** | 13:00 – 17:00 | Mejor franja (WR 88-100% en backtest) |
-| 🔴 Bloqueado | 17:00 – 03:00 | Sesión asiática — sin liquidez institucional en EUR/USD |
+| 🟢 **NY tarde** | 13:00 – 17:00 | Mejor franja: liquidez post-almuerzo, tendencias con mayor follow-through |
 
 ### Análisis histórico por hora (Feb 2025 – Jun 2026)
 
-| Hora ET | Trades | WR | P&L | Sesión |
+| Hora ET | Trades | WR | P&L | Estado |
 |---|---|---|---|---|
-| 03:00 | 31 | 45% | -$0 | London |
-| 04:00 | 5 | 40% | -$10 | London |
-| 05:00 | 6 | 50% | +$25 | London |
+| ~~03:00~~ | ~~31~~ | ~~45%~~ | ~~-$0~~ | ~~Bloqueado (price discovery)~~ |
+| ~~04:00~~ | ~~5~~ | ~~40%~~ | ~~-$10~~ | ~~Bloqueado~~ |
+| ~~05:00~~ | ~~6~~ | ~~50%~~ | ~~+$25~~ | ~~Bloqueado~~ |
 | 06:00 | 10 | 40% | -$4 | London |
 | 07:00 | 13 | 62% | +$39 | London |
 | 08:00 | 13 | 54% | +$53 | London+NY |
 | 09:00 | 10 | 50% | +$15 | London+NY |
 | 10:00 | 14 | 57% | +$43 | London+NY |
-| ~~11:00~~ | ~~16~~ | ~~38%~~ | ~~-$23~~ | ~~Bloqueado~~ |
-| ~~12:00~~ | ~~10~~ | ~~20%~~ | ~~-$61~~ | ~~Bloqueado~~ |
+| ~~11:00~~ | ~~16~~ | ~~38%~~ | ~~-$23~~ | ~~Bloqueado (NY Lunch)~~ |
+| ~~12:00~~ | ~~10~~ | ~~20%~~ | ~~-$61~~ | ~~Bloqueado (NY Lunch)~~ |
 | **13:00** | **8** | **88%** | **+$100** | **NY tarde ★** |
 | **14:00** | **7** | **100%** | **+$85** | **NY tarde ★** |
 | 15:00 | 2 | 0% | -$20 | NY |
 | 16:00 | 5 | 20% | -$22 | NY |
 
-> ★ La franja 13:00–15:00 ET concentra el mejor rendimiento. Después del almuerzo de NY la liquidez institucional retorna y los pullbacks al EMA tienen mayor follow-through.
+> ★ La franja 13:00–15:00 ET concentra el mejor rendimiento histórico. Los primeros 2h de Londres (03–05 ET) y el almuerzo de NY (11–13 ET) son las ventanas de mayor ruido y peor WR.
 
-Las ventanas bloqueadas se configuran en `BLOCKED_HOURS` en `config.json` y soportan hot-reload sin reiniciar el bot.
+Las ventanas se configuran en `BLOCKED_HOURS` y `EP_MIN_HOUR` en `config.json` con hot-reload sin reiniciar el bot.
 
 ## Gestión de posiciones
 
@@ -349,9 +349,9 @@ Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`,
 
 | Período | Trades | WR | PF | P&L | MaxDD | Racha |
 |---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) | 95 | 50.0% | 1.29 | +$139 | 0.65% | 5 |
-| Ene–Jun 2026 (5 m) | 43 | 48.8% | 1.40 | +$89 | 0.79% | 6 |
-| **Total 16 meses** | 138 | — | — | **+$228** | <1% | — |
+| Feb–Dic 2025 (11 m) | 80 | 53.2% | 1.53 | +$199 | 0.50% | 5 |
+| Ene–Jun 2026 (5 m) | 32 | 46.9% | 1.28 | +$48 | 0.66% | 5 |
+| **Total 16 meses** | 112 | — | — | **+$247** | <1% | — |
 
 *Balance inicial: $10,000 — Riesgo: 0.1% por trade ($10/trade)*
 

@@ -30,7 +30,7 @@
   "EMA_SPREAD_MIN": 0.0005,
   "EP_M15_ALIGN": false,
   "EP_SKIP_MONDAY": false,
-  "EP_MIN_HOUR": 0,
+  "EP_MIN_HOUR": 6,
   "EP_MAX_HOUR": 0,
   "EP_H4_ALIGN": true,
   "EP_ADX_PERIOD": 14,
