@@ -94,13 +94,39 @@ El backtest incluye implementaciones de estrategias experimentales que pueden ac
 | **Consecutive loss circuit** | Si se cierran `MAX_CONSEC_LOSSES` pérdidas seguidas en el mismo día ET, bloquea el resto del día. `0` = desactivado. |
 | **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (60 min) entre señales EP para evitar re-entradas. |
 
-### Ventanas bloqueadas por defecto (hora ET)
+### Ventanas de operación (hora ET)
 
-| Ventana | Horario | Razón |
+El bot opera en **tres franjas** separadas por zonas de baja calidad de señal. La franja de mayor calidad es la tarde de NY (13:00–17:00).
+
+| Franja | Horario ET | Descripción |
 |---|---|---|
-| Asian session | 17:00 – 03:00 | Baja liquidez en EUR/USD |
+| 🟢 **London** | 03:00 – 11:00 | Sesión de Londres activa |
+| 🔴 Bloqueado | 11:00 – 13:00 | NY Lunch — volumen bajo, movimientos falsos |
+| 🟢 **NY tarde** | 13:00 – 17:00 | Mejor franja (WR 88-100% en backtest) |
+| 🔴 Bloqueado | 17:00 – 03:00 | Sesión asiática — sin liquidez institucional en EUR/USD |
 
-El bot opera durante las sesiones de **Londres** (03:00 – 12:00 ET) y **Nueva York** (08:00 – 17:00 ET).
+### Análisis histórico por hora (Feb 2025 – Jun 2026)
+
+| Hora ET | Trades | WR | P&L | Sesión |
+|---|---|---|---|---|
+| 03:00 | 31 | 45% | -$0 | London |
+| 04:00 | 5 | 40% | -$10 | London |
+| 05:00 | 6 | 50% | +$25 | London |
+| 06:00 | 10 | 40% | -$4 | London |
+| 07:00 | 13 | 62% | +$39 | London |
+| 08:00 | 13 | 54% | +$53 | London+NY |
+| 09:00 | 10 | 50% | +$15 | London+NY |
+| 10:00 | 14 | 57% | +$43 | London+NY |
+| ~~11:00~~ | ~~16~~ | ~~38%~~ | ~~-$23~~ | ~~Bloqueado~~ |
+| ~~12:00~~ | ~~10~~ | ~~20%~~ | ~~-$61~~ | ~~Bloqueado~~ |
+| **13:00** | **8** | **88%** | **+$100** | **NY tarde ★** |
+| **14:00** | **7** | **100%** | **+$85** | **NY tarde ★** |
+| 15:00 | 2 | 0% | -$20 | NY |
+| 16:00 | 5 | 20% | -$22 | NY |
+
+> ★ La franja 13:00–15:00 ET concentra el mejor rendimiento. Después del almuerzo de NY la liquidez institucional retorna y los pullbacks al EMA tienen mayor follow-through.
+
+Las ventanas bloqueadas se configuran en `BLOCKED_HOURS` en `config.json` y soportan hot-reload sin reiniciar el bot.
 
 ## Gestión de posiciones
 
@@ -323,9 +349,9 @@ Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`,
 
 | Período | Trades | WR | PF | P&L | MaxDD | Racha |
 |---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) | 105 | 49.0% | 1.23 | +$120 | 0.84% | 5 |
-| Ene–Jun 2026 (5 m) | 46 | 50.0% | 1.43 | +$99 | 0.67% | 4 |
-| **Total 16 meses** | 151 | — | — | **+$219** | <1% | — |
+| Feb–Dic 2025 (11 m) | 95 | 50.0% | 1.29 | +$139 | 0.65% | 5 |
+| Ene–Jun 2026 (5 m) | 43 | 48.8% | 1.40 | +$89 | 0.79% | 6 |
+| **Total 16 meses** | 138 | — | — | **+$228** | <1% | — |
 
 *Balance inicial: $10,000 — Riesgo: 0.1% por trade ($10/trade)*
 

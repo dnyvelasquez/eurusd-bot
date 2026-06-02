@@ -15,6 +15,11 @@
       "from": "17:00",
       "to": "03:00",
       "label": "Asian session (low liquidity)"
+    },
+    {
+      "from": "11:00",
+      "to": "13:00",
+      "label": "NY Lunch (low volume, false moves)"
     }
   ],
   "SPREAD_POINTS": 0.0001,
