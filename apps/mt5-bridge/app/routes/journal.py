@@ -59,20 +59,22 @@ def get_stats():
                 """
             )
             row = dict(cur.fetchone())
+
+            total      = row["total_closed"] or 0
+            wins       = row["wins"] or 0
+            win_rate   = round(wins / total * 100, 1) if total > 0 else 0
+            gross_p    = float(row["gross_profit"])
+            gross_l    = float(row["gross_loss"])
+            pf         = round(gross_p / gross_l, 2) if gross_l > 0 else None
+
+            # Loss streak calculation — must run inside the same cursor context
+            cur.execute(
+                "SELECT result FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at ASC"
+            )
+            results = [r["result"] for r in cur.fetchall()]
+
         conn.close()
 
-        total      = row["total_closed"] or 0
-        wins       = row["wins"] or 0
-        win_rate   = round(wins / total * 100, 1) if total > 0 else 0
-        gross_p    = float(row["gross_profit"])
-        gross_l    = float(row["gross_loss"])
-        pf         = round(gross_p / gross_l, 2) if gross_l > 0 else None
-
-        # Loss streak calculation
-        cur.execute(
-            "SELECT result FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at ASC"
-        )
-        results = [r["result"] for r in cur.fetchall()]
         max_loss_streak = 0
         cur_streak = 0
         for r in results:

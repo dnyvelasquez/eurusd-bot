@@ -53,9 +53,12 @@ class MT5Client:
     @staticmethod
     def connect():
         path = _read_terminal_path()
-        if path:
-            return bool(mt5.initialize(path=path))
-        return bool(mt5.initialize())
+        try:
+            if path:
+                return bool(mt5.initialize(path=path))
+            return bool(mt5.initialize())
+        except Exception:
+            return False
 
     @staticmethod
     def shutdown():
