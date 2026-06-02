@@ -54,7 +54,7 @@ def get_stats():
                     ROUND(AVG(actual_rr)  FILTER (WHERE closed_at IS NOT NULL)::numeric, 2)   AS avg_rr,
                     ROUND(SUM(profit)     FILTER (WHERE closed_at IS NOT NULL)::numeric, 2)   AS total_pnl,
                     COALESCE(SUM(profit)  FILTER (WHERE profit > 0 AND closed_at IS NOT NULL), 0) AS gross_profit,
-                    COALESCE(ABS(SUM(profit)) FILTER (WHERE profit < 0 AND closed_at IS NOT NULL), 0) AS gross_loss
+                    COALESCE(ABS(SUM(profit) FILTER (WHERE profit < 0 AND closed_at IS NOT NULL)), 0) AS gross_loss
                 FROM trades
                 """
             )
