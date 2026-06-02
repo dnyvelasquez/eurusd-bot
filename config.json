@@ -33,6 +33,7 @@
   "EP_ADX_MAX": 25,
   "ZB_ENABLED": false,
   "CI_MAX": 61.8,
+  "TRAIL_RR": 1.5,
   "BE_AT_POINTS": 0.0,
   "BE_BUFFER_POINTS": 5e-05,
   "PARTIAL_TP_ENABLED": false,

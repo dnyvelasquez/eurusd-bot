@@ -55,7 +55,13 @@ function tradeRow(t: BacktestTrade): string {
   const icon = t.result === 'WIN' ? '✓' : t.result === 'LOSS' ? '✗' : '○';
   const pnl = (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2);
   const rr = t.actualRr !== null ? t.actualRr.toFixed(2) : 'n/a';
-  const tag = t.signalType === 'BREAKOUT' ? '[BP]' : t.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
+  const tag =
+    t.signalType === 'BREAKOUT'      ? '[BP]' :
+    t.signalType === 'EMA_PB'        ? '[EP]' :
+    t.signalType === 'EMA_CROSS'     ? '[EC]' :
+    t.signalType === 'EMA_CROSS_H1'  ? '[EH]' :
+    t.signalType === 'RANGE_REV'     ? '[RT]' :
+    t.signalType === 'SESSION_BREAK' ? '[SB]' : '[ZB]';
   return [
     pad(t.tradeNumber, 3, true),
     pad(t.openTimeISO, 17),
@@ -104,6 +110,10 @@ function printReport(r: BacktestReport): void {
   const zb = r.trades.filter(t => t.signalType === 'ZONE');
   const bp = r.trades.filter(t => t.signalType === 'BREAKOUT');
   const ep = r.trades.filter(t => t.signalType === 'EMA_PB');
+  const ec  = r.trades.filter(t => t.signalType === 'EMA_CROSS');
+  const ech = r.trades.filter(t => t.signalType === 'EMA_CROSS_H1');
+  const rt  = r.trades.filter(t => t.signalType === 'RANGE_REV');
+  const sb  = r.trades.filter(t => t.signalType === 'SESSION_BREAK');
   const statLine = (label: string, ts: BacktestTrade[]) => {
     const w = ts.filter(t => t.result === 'WIN').length;
     const l = ts.filter(t => t.result === 'LOSS').length;
@@ -118,6 +128,10 @@ function printReport(r: BacktestReport): void {
   console.log(SEP);
   console.log(statLine('[ZB] Zone Bounce:    ', zb));
   console.log(statLine('[EP] EMA Pullback:   ', ep));
+  console.log(statLine('[EC] EMA Cross M15:  ', ec));
+  console.log(statLine('[EH] EMA Cross H1:   ', ech));
+  console.log(statLine('[RT] Range Rev:      ', rt));
+  console.log(statLine('[SB] Session Break:  ', sb));
   console.log(statLine('[BP] Breakout+PB:    ', bp));
   console.log(sep);
   console.log(` Total trades:          ${m.totalTrades}`);
@@ -174,7 +188,15 @@ async function main(): Promise<void> {
   const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
   const epAdxMax            = parseFloat(args['ep-adx-max'] ?? String(cfg['EP_ADX_MAX'] ?? 0));
   const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
+  const trailRr             = parseFloat(args['trail-rr'] ?? String(cfg['TRAIL_RR'] ?? 0));
   const maxDailyLosses      = parseInt(args['max-daily-losses'] ?? String(cfg['MAX_DAILY_LOSSES'] ?? 0), 10);
+  const enableEC            = (args['ec']    ?? String(cfg['EC_ENABLED']   ?? 'false')) !== 'false';
+  const enableRT            = (args['rt']    ?? String(cfg['RT_ENABLED']   ?? 'false')) !== 'false';
+  const enableSB            = (args['sb']    ?? String(cfg['SB_ENABLED']   ?? 'false')) !== 'false';
+  const enableECH1          = (args['ec-h1'] ?? String(cfg['ECH1_ENABLED'] ?? 'false')) !== 'false';
+  const rtCiMin             = parseFloat(args['rt-ci-min'] ?? String(cfg['RT_CI_MIN'] ?? 55));
+  const rtLookback          = parseInt(args['rt-lookback'] ?? String(cfg['RT_LOOKBACK'] ?? 8), 10);
+  const sbHours             = parseInt(args['sb-hours']    ?? String(cfg['SB_HOURS']    ?? 3), 10);
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
@@ -219,7 +241,15 @@ async function main(): Promise<void> {
     spreadPoints,
     epAdxMax,
     tpRr,
+    trailRr,
     maxDailyLosses,
+    enableEC,
+    enableRT,
+    enableSB,
+    enableECH1,
+    rtCiMin,
+    rtLookback,
+    sbHours,
   });
 
   printReport(report);
