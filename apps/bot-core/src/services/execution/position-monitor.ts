@@ -10,12 +10,12 @@ export interface PositionAction {
 }
 
 export class PositionMonitor {
-  private readonly trailAt = 2.0;
   private readonly partialTpDone = new Set<number>();
 
   constructor(
-    private readonly beAtPoints: number = 8,
-    private readonly beBuffer: number = 0.25,
+    private readonly beAtPoints: number = 0,
+    private readonly beBuffer: number = 0,
+    private readonly trailRr: number = 0,  // 0 = disabled; >0 = trail at trailRr × slDist behind price
   ) {}
 
   check(position: Position, currentPrice: number, partialTpEnabled = false): PositionAction | null {
@@ -27,12 +27,13 @@ export class PositionMonitor {
         ? currentPrice - position.priceOpen
         : position.priceOpen - currentPrice;
 
-    // Trailing stop: precio se movió ≥ 2R → arrastrar SL a 1R del precio actual
-    if (profitPoints >= slDistance * this.trailAt) {
+    // Trailing stop: activates at trailRr × slDist profit, SL follows at trailRr × slDist behind price
+    if (this.trailRr > 0 && profitPoints >= slDistance * this.trailRr) {
+      const trailDist = slDistance * this.trailRr;
       const newSL =
         position.type === 'BUY'
-          ? currentPrice - slDistance
-          : currentPrice + slDistance;
+          ? currentPrice - trailDist
+          : currentPrice + trailDist;
 
       const improves =
         position.type === 'BUY'

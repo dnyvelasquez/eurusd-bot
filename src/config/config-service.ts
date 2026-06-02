@@ -67,6 +67,7 @@ class ConfigService {
   get zoneSlBufferPoints(): number { return this.config.ZONE_SL_BUFFER_POINTS ?? 5; }
   get beAtPoints(): number { return this.config.BE_AT_POINTS ?? 8; }
   get beBufferPoints(): number { return this.config.BE_BUFFER_POINTS ?? 0.25; }
+  get trailRr(): number { return this.config.TRAIL_RR ?? 0; }
   get maxConsecLosses(): number { return this.config.MAX_CONSEC_LOSSES ?? 0; }
   get emaSpreadMin(): number { return this.config.EMA_SPREAD_MIN ?? 0; }
   get epM15Align(): boolean { return this.config.EP_M15_ALIGN ?? true; }

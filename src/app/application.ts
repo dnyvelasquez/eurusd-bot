@@ -66,6 +66,7 @@ export class Application {
   private readonly positionMonitor = new PositionMonitor(
     configService.beAtPoints,
     configService.beBufferPoints,
+    configService.trailRr,
   );
 
   private readonly licenseService = new LicenseService();
