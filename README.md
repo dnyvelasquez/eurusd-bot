@@ -33,10 +33,9 @@ Bot de trading algorítmico para EUR/USD basado en EMA Pullback. Analiza el merc
 │  Filtros de riesgo (se evalúan antes de cada orden)     │
 │    ├─ NewsFilterService      (bloqueo ±1 min noticias)  │
 │    ├─ SessionGuard           (horarios bloqueados ET)   │
-│    ├─ DailyDrawdownGuard     (límite % pérdida diaria)  │
 │    ├─ DailyTradeCountGuard   (máximo trades por día)    │
 │    ├─ DailyLossGuard         (máximo pérdidas por día)  │
-│    └─ ConsecLossGuard        (circuit breaker semanal)  │
+│    └─ ConsecLossGuard        (circuit breaker diario)   │
 │                                                          │
 │  TradeJournalService  (registro de operaciones en DB)   │
 │  BotStatusService     (semáforo en tiempo real)         │
@@ -78,8 +77,12 @@ El backtest incluye implementaciones de estrategias experimentales que pueden ac
 | `--ec-h1 true` | EMA Cross H1 [EH] | Cruce de EMA 8/34 en H1 con confirmación H4 |
 | `--rt true` | Range Mean Rev [RT] | Fade de extremos M15 en mercados choppy (CI > umbral) |
 | `--sb true` | Session Breakout [SB] | Breakout del rango asiático en apertura de Londres |
+| `--fb true` | Fibo Retracement [FB] | Retroceso a niveles Fibonacci de swings H1 con confirmación de tendencia/MACD |
+| `--mo true` | Momentum [MO] | Vela de displacement M5 que rompe el extremo reciente en dirección HTF |
 
-> Estas estrategias tienen cooldown independiente del EP y no afectan su señal.
+> Estas estrategias tienen cooldown independiente del EP y no afectan su señal. `--regime true` conmuta por régimen (Choppiness Index): habilita señales de tendencia solo en mercado direccional y `--rt` solo en rango.
+>
+> **Nota:** todas fueron backtesteadas contra el EP en Feb 2025 – Jun 2026 y ninguna lo supera (pierden por sí solas o degradan su win rate). Se conservan como herramientas de investigación, desactivadas por defecto.
 
 ## Filtros de riesgo
 
@@ -87,9 +90,8 @@ El backtest incluye implementaciones de estrategias experimentales que pueden ac
 |---|---|
 | **News filter** | Bloquea señales ±1 minuto alrededor de noticias EUR/USD de alto impacto (Forex Factory). Se refresca cada día a medianoche UTC. |
 | **Session guard** | Bloquea señales fuera de las ventanas horarias permitidas. Usa hora ET con soporte automático de DST. |
-| **Daily loss limit** | Si el número de pérdidas del día alcanza `MAX_DAILY_LOSSES` (2), no se abren más posiciones hasta el día siguiente. |
-| **Consecutive bad days** | Si se cierran `MAX_CONSEC_LOSS_DAYS` (2) días consecutivos con pérdida neta, el bot pausa hasta el lunes siguiente. |
-| **Daily drawdown** | Si la pérdida del día supera `MAX_DAILY_DRAWDOWN_PERCENT`, no se abren más posiciones hasta el día siguiente. |
+| **Daily loss limit** | Si el número de pérdidas del día ET alcanza `MAX_DAILY_LOSSES` (2), no se abren más posiciones hasta el día siguiente. |
+| **Consecutive bad days** | Si se cierran `MAX_CONSEC_LOSS_DAYS` días consecutivos con pérdida neta, el bot pausa hasta el lunes siguiente. `0` = desactivado (default actual). |
 | **Daily trade limit** | Si el número de trades del día alcanza `MAX_DAILY_TRADES`, no se abren más posiciones. `0` = sin límite. |
 | **Consecutive loss circuit** | Si se cierran `MAX_CONSEC_LOSSES` pérdidas seguidas en el mismo día ET, bloquea el resto del día. `0` = desactivado. |
 | **Signal cooldown** | Mínimo `SIGNAL_COOLDOWN_MINUTES` (60 min) entre señales EP para evitar re-entradas. |
@@ -151,6 +153,17 @@ lotaje = riesgoUSD / (distanciaStop / tradeTickSize × tradeTickValue)
 ```
 
 Para EURUSDm en cuenta USD: `tradeTickSize = 0.00001`, `tradeTickValue ≈ $1/lot/punto`.
+
+**Ejemplo** (config actual: balance $10,000, `RISK_PERCENT=0.5`, SL a 15 pips):
+
+```
+riesgoUSD        = 10000 × 0.5 / 100        = $50
+distanciaStop    = 0.0015                   (15 pips = 150 puntos)
+riesgo por lote  = 0.0015 / 0.00001 × $1    = $150/lote
+lotaje           = 50 / 150                 = 0.333 → 0.3 lotes (redondeado a 0.1)
+```
+
+El resultado se acota al rango `[0.1, 20.0]` lotes. El `tradeTickValue` real se consulta a MT5 al arrancar, así que el cálculo se ajusta automáticamente al símbolo y tipo de cuenta.
 
 ## Dashboard web
 
@@ -327,6 +340,9 @@ npm run backtest -- 2025-02-01 2025-12-31
 | `--ec-h1 true` | — | Activar EMA Cross H1 |
 | `--rt true` | — | Activar Range Mean Reversion |
 | `--sb true` | — | Activar Session Breakout |
+| `--fb true` | — | Activar Fibo Retracement |
+| `--mo true` | — | Activar Momentum |
+| `--regime true` | — | Conmutar por régimen (tendencia vs rango por CI) |
 
 Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIMITY_POINTS`, `ZONE_SL_BUFFER_POINTS`, `EMA_SPREAD_MIN`, `EP_H4_ALIGN`, `EP_ADX_MAX`, `CI_MAX`, `TRAIL_RR`, `MAX_DAILY_LOSSES`, `MAX_CONSEC_LOSS_DAYS`, `BE_AT_POINTS`, `BE_BUFFER_POINTS`, `PARTIAL_TP_ENABLED` y `MAX_CONSEC_LOSSES` se leen automáticamente desde `config.json`.
 
@@ -345,15 +361,14 @@ Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIM
 
 ### Resultados de referencia (config actual)
 
-Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=2`:
+Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=0`, `RISK_PERCENT=0.5`:
 
 | Período | Trades | WR | PF | P&L | MaxDD | Racha |
 |---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) | 80 | 53.2% | 1.53 | +$199 | 0.50% | 5 |
-| Ene–Jun 2026 (5 m) | 32 | 46.9% | 1.28 | +$48 | 0.66% | 5 |
-| **Total 16 meses** | 112 | — | — | **+$247** | <1% | — |
+| Feb–Dic 2025 (11 m) — *out-of-sample* | 81 | 53.8% | 1.58 | +$1,123 | 2.48% | 5 |
+| Ene–Jun 2026 (6 m) | 38 | 50.0% | 1.33 | +$327 | 3.45% | 7 |
 
-*Balance inicial: $10,000 — Riesgo: 0.1% por trade ($10/trade)*
+*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade). 2025 es el período out-of-sample (no usado para tunear los filtros). El archivo `backtest-EURUSDm-2025-02-01-2025-12-31.json` guarda el detalle del run de 2025.*
 
 ## Parámetros de configuración
 
@@ -381,7 +396,7 @@ Todos los parámetros `*_POINTS` se expresan en **unidades de precio raw** de EU
 |---|---|---|
 | `SIGNAL_COOLDOWN_MINUTES` | `60` | Minutos mínimos entre señales EP de la misma dirección |
 | `MAX_DAILY_LOSSES` | `2` | Máximo de pérdidas por día ET; al alcanzarse, pausa el resto del día |
-| `MAX_CONSEC_LOSS_DAYS` | `2` | Días consecutivos con pérdida neta; al alcanzarse, pausa hasta el lunes |
+| `MAX_CONSEC_LOSS_DAYS` | `0` | Días consecutivos con pérdida neta antes de pausar hasta el lunes (`0` = desactivado) |
 | `MAX_CONSEC_LOSSES` | `0` | Pérdidas consecutivas antes de pausar el día (`0` = desactivado) |
 | `MAX_DAILY_TRADES` | `0` | Máximo de trades por día (`0` = sin límite) |
 
@@ -399,7 +414,7 @@ Todos los parámetros `*_POINTS` se expresan en **unidades de precio raw** de EU
 | Parámetro | Default | Descripción |
 |---|---|---|
 | `SYMBOL` | `EURUSDm` | Símbolo en MT5 (nombre exacto de Exness) |
-| `RISK_PERCENT` | `0.1` | % del balance a arriesgar por trade |
+| `RISK_PERCENT` | `0.5` | % del balance a arriesgar por trade |
 | `LIVE_TRADING` | `false` | `true` para ejecutar órdenes reales |
 | `ZB_ENABLED` | `false` | Activar estrategia Zone Bounce |
 | `MT5_TERMINAL_PATH` | `""` | Ruta al ejecutable de MT5 (vacío = auto-detecta) |
@@ -476,6 +491,22 @@ Cada operación ejecutada en modo live se registra en la tabla `trades` de Neon 
 | `close_price` / `profit` | Precio de cierre y P&L |
 | `actual_rr` | R:R realizado |
 | `result` | `WIN`, `LOSS` o `BE` (break-even) |
+
+Al cerrar cada operación también se inserta un registro en la tabla `trade_results` de Neon:
+
+| Campo | Descripción |
+|---|---|
+| `owner_name` | Nombre del titular (desde `license-cache.json`) |
+| `account_type` | `DEMO` o `REAL` |
+| `mt5_account` | Número de cuenta MT5 |
+| `bot_name` | `EURUSD Bot` |
+| `symbol` | Activo operado |
+| `profit_usd` | P&L en USD |
+| `direction` | `LONG` o `SHORT` |
+| `closed_at` | Timestamp UTC |
+| `closed_at_et` | Fecha y hora de cierre en formato `YYYY-MM-DD HH:MM:SS` hora ET |
+
+Estos datos se consultan desde **[bot-reports](https://bot-reports.vercel.app)** — dashboard centralizado con filtros por titular, cuenta, bot, activo y período (día/mes/año).
 
 ## Modo semi-automático
 
