@@ -80,8 +80,13 @@ export class TradeJournalService {
         symbol       VARCHAR(20)  NOT NULL,
         profit_usd   FLOAT        NOT NULL,
         direction    VARCHAR(5)   NOT NULL,
-        closed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        closed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        closed_at_et VARCHAR(25)
       )
+    `;
+
+    await this.sql`
+      ALTER TABLE trade_results ADD COLUMN IF NOT EXISTS closed_at_et VARCHAR(25)
     `;
 
     logger.info('Trade journal initialized');
@@ -119,6 +124,7 @@ export class TradeJournalService {
       const actualRr = slDistance > 0 ? Math.round((priceMove / slDistance) * 100) / 100 : 0;
 
       const result = Math.abs(actualRr) < 0.1 ? 'BE' : actualRr > 0 ? 'WIN' : 'LOSS';
+      const closedAtEt = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace('T', ' ');
 
       await this.sql`
         UPDATE trades
@@ -136,10 +142,10 @@ export class TradeJournalService {
       if (cache) {
         await this.sql`
           INSERT INTO trade_results
-            (owner_name, account_type, mt5_account, bot_name, symbol, profit_usd, direction)
+            (owner_name, account_type, mt5_account, bot_name, symbol, profit_usd, direction, closed_at_et)
           VALUES
             (${cache.owner_name}, ${cache.trade_mode}, ${mt5_login},
-             ${this.botName}, ${symbol}, ${profit}, ${side === 'BUY' ? 'LONG' : 'SHORT'})
+             ${this.botName}, ${symbol}, ${profit}, ${side === 'BUY' ? 'LONG' : 'SHORT'}, ${closedAtEt})
         `;
         logger.info({ ticket, owner: cache.owner_name, profit: profit.toFixed(2) }, 'Trade result reported');
       }
