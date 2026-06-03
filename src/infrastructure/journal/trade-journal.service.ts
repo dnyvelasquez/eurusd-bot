@@ -1,7 +1,26 @@
+import fs from 'fs';
+import path from 'path';
+
 import postgres from 'postgres';
 
 import { logger } from '@infra/logger/logger';
 import { env } from '@config/env';
+
+const CACHE_PATH = path.resolve(__dirname, '..', '..', '..', 'license-cache.json');
+
+interface LicenseCache {
+  owner_name: string;
+  trade_mode: string;
+  mt5_account: number;
+}
+
+function readLicenseCache(): LicenseCache | null {
+  try {
+    return JSON.parse(fs.readFileSync(CACHE_PATH, 'utf-8')) as LicenseCache;
+  } catch {
+    return null;
+  }
+}
 
 export interface JournalEntry {
   ticket: number;
@@ -18,6 +37,8 @@ export interface JournalEntry {
 
 export class TradeJournalService {
   private sql: ReturnType<typeof postgres> | null = null;
+
+  constructor(private readonly botName: string) {}
 
   async initialize(): Promise<void> {
     if (!env.DATABASE_URL) {
@@ -49,6 +70,20 @@ export class TradeJournalService {
       )
     `;
 
+    await this.sql`
+      CREATE TABLE IF NOT EXISTS trade_results (
+        id           SERIAL PRIMARY KEY,
+        owner_name   VARCHAR(100) NOT NULL,
+        account_type VARCHAR(10)  NOT NULL,
+        mt5_account  INTEGER      NOT NULL,
+        bot_name     VARCHAR(50)  NOT NULL,
+        symbol       VARCHAR(20)  NOT NULL,
+        profit_usd   FLOAT        NOT NULL,
+        direction    VARCHAR(5)   NOT NULL,
+        closed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      )
+    `;
+
     logger.info('Trade journal initialized');
   }
 
@@ -72,13 +107,13 @@ export class TradeJournalService {
   async recordClose(ticket: number, closePrice: number, profit: number): Promise<void> {
     if (!this.sql) return;
     try {
-      const rows = await this.sql<{ side: string; entry_price: number; stop_loss: number }[]>`
-        SELECT side, entry_price, stop_loss FROM trades WHERE ticket = ${ticket}
+      const rows = await this.sql<{ side: string; entry_price: number; stop_loss: number; symbol: string; mt5_login: number }[]>`
+        SELECT side, entry_price, stop_loss, symbol, mt5_login FROM trades WHERE ticket = ${ticket}
       `;
 
       if (!rows.length) return;
 
-      const { side, entry_price, stop_loss } = rows[0];
+      const { side, entry_price, stop_loss, symbol, mt5_login } = rows[0];
       const slDistance = Math.abs(entry_price - stop_loss);
       const priceMove = side === 'BUY' ? closePrice - entry_price : entry_price - closePrice;
       const actualRr = slDistance > 0 ? Math.round((priceMove / slDistance) * 100) / 100 : 0;
@@ -96,6 +131,18 @@ export class TradeJournalService {
         { ticket, profit: profit.toFixed(2), result, rr: actualRr.toFixed(2) },
         'Trade closed in journal',
       );
+
+      const cache = readLicenseCache();
+      if (cache) {
+        await this.sql`
+          INSERT INTO trade_results
+            (owner_name, account_type, mt5_account, bot_name, symbol, profit_usd, direction)
+          VALUES
+            (${cache.owner_name}, ${cache.trade_mode}, ${mt5_login},
+             ${this.botName}, ${symbol}, ${profit}, ${side === 'BUY' ? 'LONG' : 'SHORT'})
+        `;
+        logger.info({ ticket, owner: cache.owner_name, profit: profit.toFixed(2) }, 'Trade result reported');
+      }
     } catch (err) {
       logger.warn({ err, ticket }, 'Failed to record trade close in journal');
     }

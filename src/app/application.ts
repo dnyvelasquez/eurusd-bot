@@ -4,6 +4,7 @@ import { LicenseService } from '@infra/license/license.service';
 import { NewsFilterService } from '@infra/news/news-filter.service';
 import { DailyTradeCountGuard } from '@infra/risk/daily-trade-count.guard';
 import { ConsecLossGuard } from '@infra/risk/consec-loss.guard';
+import { DailyLossGuard } from '@infra/risk/daily-loss.guard';
 import { SessionGuard } from '@infra/session/session-guard';
 import { TradeJournalService } from '@infra/journal/trade-journal.service';
 import { BotStatusService } from '@infra/status/bot-status.service';
@@ -23,6 +24,7 @@ import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
 import { ADXEngine } from '@bot-core/strategy/indicators/adx-engine';
+import { FiboEngine } from '@bot-core/strategy/indicators/fibo-engine';
 import { ExecutionValidator } from '@bot-core/services/execution/execution-validator';
 import { MT5Executor } from '@bot-core/services/execution/mt5-executor';
 import { PositionMonitor } from '@bot-core/services/execution/position-monitor';
@@ -42,7 +44,7 @@ interface ZoneTradeSignal {
   takeProfit: number;
   activeZone: SRZone;
   momentum: MomentumSignal;
-  signalType?: 'ZONE' | 'EMA_PB';
+  signalType?: 'ZONE' | 'EMA_PB' | 'FIBO';
 }
 
 export class Application {
@@ -60,6 +62,7 @@ export class Application {
   private readonly emaEngine = new EMAEngine();
   private readonly macdEngine = new MACDEngine();
   private readonly adxEngine = new ADXEngine();
+  private readonly fiboEngine = new FiboEngine();
   private readonly positionSizing = new PositionSizing();
   private readonly executionValidator = new ExecutionValidator();
   private readonly executor = new MT5Executor();
@@ -73,8 +76,9 @@ export class Application {
   private readonly newsFilter = new NewsFilterService();
   private readonly dailyTradeCountGuard = new DailyTradeCountGuard();
   private readonly consecLossGuard = new ConsecLossGuard();
+  private readonly dailyLossGuard = new DailyLossGuard();
   private readonly sessionGuard = new SessionGuard();
-  private readonly journal = new TradeJournalService();
+  private readonly journal = new TradeJournalService('EURUSD Bot');
   private readonly statusService = new BotStatusService();
   private pollTimer: NodeJS.Timeout | null = null;
   private readonly lastSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
@@ -206,7 +210,7 @@ export class Application {
         } else if (this.pauseUntilMon) {
           logger.debug('Signal evaluation skipped — consecutive bad-days pause active until Monday');
         } else {
-          const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
+          const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateFiboRetracementSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
           if (signal) {
             await this.onZoneSignal(signal).catch((err: unknown) =>
               logger.error(err, 'Error processing zone signal'),
@@ -294,6 +298,11 @@ export class Application {
 
     if (this.dailyTradeCountGuard.isBreached(configService.maxDailyTrades)) {
       write(false, `Máximo de trades diarios (${metrics.dailyTrades}/${metrics.maxDailyTrades})`);
+      return;
+    }
+
+    if (this.dailyLossGuard.isBlocked(configService.maxDailyLosses)) {
+      write(false, `Máximo de pérdidas diarias (${this.dailyLossGuard.lossCount()}/${configService.maxDailyLosses})`);
       return;
     }
 
@@ -504,6 +513,7 @@ export class Application {
       if (history.success && history.data) {
         await this.journal.recordClose(ticket, history.data.closePrice, history.data.profit);
         this.consecLossGuard.recordResult(history.data.profit);
+        this.dailyLossGuard.recordResult(history.data.profit);
       }
     } catch (err) {
       logger.warn({ ticket, err }, 'Could not fetch position history for journal');
@@ -647,7 +657,22 @@ export class Application {
     }
 
     const currentPrice = m5[m5.length - 1].close;
-    if (Math.abs(currentPrice - m15Ema34) > configService.zoneProximityPoints) return null;
+
+    // Fibo replace: skip EMA proximity, use nearest Fibo level as SL anchor instead
+    // Fibo filter: keep EMA proximity AND also require a nearby Fibo level
+    let slAnchor = m15Ema34;
+
+    if (configService.fiboReplaceEmaProx) {
+      const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
+      if (!fibo?.nearestLevel || fibo.direction !== direction) return null;
+      slAnchor = fibo.nearestLevel.price;
+    } else {
+      if (Math.abs(currentPrice - m15Ema34) > configService.zoneProximityPoints) return null;
+      if (configService.fiboFilterEmaPb) {
+        const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
+        if (!fibo?.nearestLevel || fibo.direction !== direction) return null;
+      }
+    }
 
     if (configService.epAdxMin > 0) {
       const adx = this.adxEngine.last(h4, configService.epAdxPeriod);
@@ -661,8 +686,8 @@ export class Application {
 
     const entryPrice = currentPrice;
     const stopLoss = direction === 'BULLISH'
-      ? m15Ema34 - configService.zoneSlBufferPoints
-      : m15Ema34 + configService.zoneSlBufferPoints;
+      ? slAnchor - configService.zoneSlBufferPoints
+      : slAnchor + configService.zoneSlBufferPoints;
 
     const slDist = Math.abs(entryPrice - stopLoss);
     if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
@@ -672,7 +697,7 @@ export class Application {
       : entryPrice - slDist * 2;
 
     const syntheticZone: SRZone = {
-      level: m15Ema34,
+      level: slAnchor,
       type: direction === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
       timeframe: 'M15',
       strength: 1,
@@ -690,10 +715,103 @@ export class Application {
     };
   }
 
+  private evaluateFiboRetracementSignal(symbol: string): ZoneTradeSignal | null {
+    if (!configService.fiboEnabled) return null;
+
+    const nowET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false }).format(new Date());
+    const [weekday, hourStr] = nowET.split(', ');
+    const hourNum = parseInt(hourStr ?? '0', 10);
+    if (configService.epSkipMonday && weekday === 'Mon') return null;
+    if (configService.epMinHour > 0 && hourNum < configService.epMinHour) return null;
+    if (configService.epMaxHour > 0 && hourNum >= configService.epMaxHour) return null;
+
+    const h4  = this.marketData.getCandles(symbol, 'H4');
+    const h1  = this.marketData.getCandles(symbol, 'H1');
+    const m15 = this.marketData.getCandles(symbol, 'M15');
+    const m5  = this.marketData.getCandles(symbol, 'M5');
+
+    if (h1.length < 40 || m15.length < 40 || m5.length < 1) return null;
+
+    const h1Ema8  = this.emaEngine.last(h1, 8);
+    const h1Ema34 = this.emaEngine.last(h1, 34);
+    if (h1Ema8 === null || h1Ema34 === null) return null;
+
+    const direction: 'BULLISH' | 'BEARISH' = h1Ema8 > h1Ema34 ? 'BULLISH' : 'BEARISH';
+    if (configService.emaSpreadMin > 0 && Math.abs(h1Ema8 - h1Ema34) < configService.emaSpreadMin) return null;
+
+    if (configService.epH4Align) {
+      const h4Ema8  = this.emaEngine.last(h4, 8);
+      const h4Ema34 = this.emaEngine.last(h4, 34);
+      if (h4Ema8 === null || h4Ema34 === null) return null;
+      if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
+      if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
+    }
+
+    const currentPrice = m5[m5.length - 1].close;
+
+    const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
+    if (!fibo?.nearestLevel) return null;
+    if (fibo.direction !== direction) return null;
+
+    const macd = this.macdEngine.analyze(m15);
+    if (!macd) return null;
+    if (direction === 'BULLISH' && macd.histogram <= 0) return null;
+    if (direction === 'BEARISH' && macd.histogram >= 0) return null;
+
+    if (configService.fiboRequireFvgDisp) {
+      const fvgWindow = m5.slice(-7);
+      let fvg = null;
+      for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+        const slice = fvgWindow.slice(k - 2, k + 1);
+        fvg = direction === 'BULLISH'
+          ? this.fvgDetector.detectBullish(slice)
+          : this.fvgDetector.detectBearish(slice);
+      }
+      if (!fvg) return null;
+      if (configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) return null;
+
+      const dispWindow = m5.slice(-5);
+      const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
+      if (!displacement) return null;
+    }
+
+    const entryPrice = currentPrice;
+    const fiboLevel  = fibo.nearestLevel.price;
+
+    const stopLoss = direction === 'BULLISH'
+      ? fiboLevel - configService.zoneSlBufferPoints
+      : fiboLevel + configService.zoneSlBufferPoints;
+
+    const slDist = Math.abs(entryPrice - stopLoss);
+    if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
+
+    const takeProfit = direction === 'BULLISH'
+      ? entryPrice + slDist * 2
+      : entryPrice - slDist * 2;
+
+    const syntheticZone: SRZone = {
+      level: fiboLevel,
+      type: direction === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
+      timeframe: 'H1',
+      strength: fibo.nearestLevel.ratio,
+      candleTime: h1[h1.length - 1].time,
+    };
+
+    return {
+      signalType: 'FIBO',
+      direction,
+      entryPrice,
+      stopLoss,
+      takeProfit,
+      activeZone: syntheticZone,
+      momentum: { direction, strength: 'NONE', timestamp: m5[m5.length - 1].time },
+    };
+  }
+
   private async onZoneSignal(signal: ZoneTradeSignal): Promise<void> {
     const { direction, entryPrice, stopLoss, takeProfit, activeZone, momentum } = signal;
     const symbol = configService.symbol;
-    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
+    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : signal.signalType === 'FIBO' ? '[FB]' : '[ZB]';
 
     logger.info(
       { direction, zone: activeZone.level, zoneTF: activeZone.timeframe, m15Momentum: momentum.strength, tag },
@@ -770,6 +888,14 @@ export class Application {
       logger.warn(
         { streak: this.consecLossGuard.currentStreak, max: configService.maxConsecLosses },
         'Signal skipped — consecutive loss circuit breaker active',
+      );
+      return;
+    }
+
+    if (this.dailyLossGuard.isBlocked(configService.maxDailyLosses)) {
+      logger.warn(
+        { losses: this.dailyLossGuard.lossCount(), max: configService.maxDailyLosses },
+        'Signal skipped — daily loss limit reached',
       );
       return;
     }
