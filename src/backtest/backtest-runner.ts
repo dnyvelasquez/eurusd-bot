@@ -74,11 +74,6 @@ export interface BacktestParams {
   maxDailyLosses?: number; // 0=off; >0 stop trading for the rest of the day after N losses
   smaTrendPeriod?: number; // 0=off; >0 gate all signals by price vs SMA on smaTrendTf
   smaTrendTf?: 'D1' | 'H4' | 'H1';
-  enableSMAX?: boolean;
-  smaxFastPeriod?: number;
-  smaxSlowPeriod?: number;
-  smaxTf?: 'H1' | 'H4';
-  smaxLookback?: number;
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -293,7 +288,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     maxDailyLosses = 0,
     smaTrendPeriod = 0,
     smaTrendTf = 'D1',
-    enableSMAX = false, smaxFastPeriod = 20, smaxSlowPeriod = 50, smaxTf = 'H1', smaxLookback = 5,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -521,63 +515,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     };
   }
 
-  function evalSMACrossover(h1: Candle[], h4: Candle[], m5All: Candle[], i: number): SignalCandidate | null {
-    if (!enableSMAX) return null;
-    const tfCandles = smaxTf === 'H4' ? h4 : h1;
-    if (tfCandles.length < smaxSlowPeriod + smaxLookback) return null;
-
-    let crossDir: 'BULLISH' | 'BEARISH' | null = null;
-    const len = tfCandles.length;
-    for (let k = 1; k <= smaxLookback && crossDir === null; k++) {
-      const currSlice = tfCandles.slice(0, len - k + 1);
-      const prevSlice = tfCandles.slice(0, len - k);
-      if (prevSlice.length < smaxSlowPeriod) break;
-      const fast     = smaEngine.last(currSlice, smaxFastPeriod);
-      const slow     = smaEngine.last(currSlice, smaxSlowPeriod);
-      const fastPrev = smaEngine.last(prevSlice, smaxFastPeriod);
-      const slowPrev = smaEngine.last(prevSlice, smaxSlowPeriod);
-      if (fast === null || slow === null || fastPrev === null || slowPrev === null) continue;
-      if (fastPrev <= slowPrev && fast > slow) crossDir = 'BULLISH';
-      else if (fastPrev >= slowPrev && fast < slow) crossDir = 'BEARISH';
-    }
-    if (!crossDir) return null;
-
-    const fastNow = smaEngine.last(tfCandles, smaxFastPeriod);
-    const slowNow = smaEngine.last(tfCandles, smaxSlowPeriod);
-    if (fastNow === null || slowNow === null) return null;
-    if (crossDir === 'BULLISH' && fastNow <= slowNow) return null;
-    if (crossDir === 'BEARISH' && fastNow >= slowNow) return null;
-
-    const currentPrice = m5All[i]!.close;
-    if (Math.abs(currentPrice - fastNow) > zoneProximityPoints) return null;
-
-    const stopLoss = crossDir === 'BULLISH'
-      ? slowNow - zoneSlBufferPoints
-      : slowNow + zoneSlBufferPoints;
-    const slDist = Math.abs(currentPrice - stopLoss);
-    if (minSlPoints > 0 && slDist < minSlPoints) return null;
-
-    const fvgWindow = m5All.slice(Math.max(0, i - 6), i + 1);
-    let fvg = null;
-    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
-      const slice = fvgWindow.slice(k - 2, k + 1);
-      fvg = crossDir === 'BULLISH' ? fvgDetector.detectBullish(slice) : fvgDetector.detectBearish(slice);
-    }
-    if (fvg && minFvgPoints > 0 && fvg.size < minFvgPoints) fvg = null;
-
-    const dispWindow = m5All.slice(Math.max(0, i - 4), i + 1);
-    const displacement = dispWindow.map(c => displacementDetector.detect(c)).find(Boolean) ?? null;
-    if (!fvg && !displacement) return null;
-
-    return {
-      signalType: 'SMA_X',
-      direction: crossDir,
-      entryPrice: currentPrice,
-      stopLoss,
-      takeProfit: crossDir === 'BULLISH' ? currentPrice + slDist * 2 : currentPrice - slDist * 2,
-    };
-  }
-
   // ── Replay state ──────────────────────────────────────────────────────────
   const trades: BacktestTrade[] = [];
   const lastSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
@@ -647,8 +584,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
     const signal =
       (enableZB ? evalZoneBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
-      (enableEP ? evalEMAPullback(h4Window, h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null) ??
-      evalSMACrossover(h1Window, h4Window, m5Candles, i);
+      (enableEP ? evalEMAPullback(h4Window, h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null);
 
     if (!signal) continue;
 

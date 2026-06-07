@@ -44,7 +44,7 @@ interface ZoneTradeSignal {
   takeProfit: number;
   activeZone: SRZone;
   momentum: MomentumSignal;
-  signalType?: 'ZONE' | 'EMA_PB' | 'SMA_X';
+  signalType?: 'ZONE' | 'EMA_PB';
 }
 
 export class Application {
@@ -210,7 +210,7 @@ export class Application {
         } else if (this.pauseUntilMon) {
           logger.debug('Signal evaluation skipped — consecutive bad-days pause active until Monday');
         } else {
-          const rawSignal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol) ?? this.evaluateSMACrossoverSignal(symbol);
+          const rawSignal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
           const trendFiltered = rawSignal ? this.applySmaTrendFilter(rawSignal, symbol) : null;
           const signal = trendFiltered ? this.applyChoppinessFilter(trendFiltered, symbol) : null;
           if (signal) {
@@ -638,90 +638,6 @@ export class Application {
     };
   }
 
-  private evaluateSMACrossoverSignal(symbol: string): ZoneTradeSignal | null {
-    if (!configService.enableSmax) return null;
-
-    const h1 = this.marketData.getCandles(symbol, 'H1');
-    const h4 = this.marketData.getCandles(symbol, 'H4');
-    const m5 = this.marketData.getCandles(symbol, 'M5');
-
-    const tfCandles = configService.smaxTf === 'H4' ? h4 : h1;
-    const minLen = configService.smaxSlowPeriod + configService.smaxLookback;
-    if (tfCandles.length < minLen || m5.length < 1) return null;
-
-    const len = tfCandles.length;
-    let crossDir: 'BULLISH' | 'BEARISH' | null = null;
-
-    for (let k = 1; k <= configService.smaxLookback && crossDir === null; k++) {
-      const currSlice = tfCandles.slice(0, len - k + 1);
-      const prevSlice = tfCandles.slice(0, len - k);
-      if (prevSlice.length < configService.smaxSlowPeriod) break;
-
-      const fast     = this.smaEngine.last(currSlice, configService.smaxFastPeriod);
-      const slow     = this.smaEngine.last(currSlice, configService.smaxSlowPeriod);
-      const fastPrev = this.smaEngine.last(prevSlice, configService.smaxFastPeriod);
-      const slowPrev = this.smaEngine.last(prevSlice, configService.smaxSlowPeriod);
-      if (fast === null || slow === null || fastPrev === null || slowPrev === null) continue;
-
-      if (fastPrev <= slowPrev && fast > slow) crossDir = 'BULLISH';
-      else if (fastPrev >= slowPrev && fast < slow) crossDir = 'BEARISH';
-    }
-
-    if (!crossDir) return null;
-
-    const fastNow = this.smaEngine.last(tfCandles, configService.smaxFastPeriod);
-    const slowNow = this.smaEngine.last(tfCandles, configService.smaxSlowPeriod);
-    if (fastNow === null || slowNow === null) return null;
-    if (crossDir === 'BULLISH' && fastNow <= slowNow) return null;
-    if (crossDir === 'BEARISH' && fastNow >= slowNow) return null;
-
-    const currentPrice = m5[m5.length - 1].close;
-    if (Math.abs(currentPrice - fastNow) > configService.zoneProximityPoints) return null;
-
-    const stopLoss = crossDir === 'BULLISH'
-      ? slowNow - configService.zoneSlBufferPoints
-      : slowNow + configService.zoneSlBufferPoints;
-    const slDist = Math.abs(currentPrice - stopLoss);
-    if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
-
-    const fvgWindow = m5.slice(-7);
-    let fvg = null;
-    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
-      const slice = fvgWindow.slice(k - 2, k + 1);
-      fvg = crossDir === 'BULLISH'
-        ? this.fvgDetector.detectBullish(slice)
-        : this.fvgDetector.detectBearish(slice);
-    }
-    if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) fvg = null;
-
-    const dispWindow = m5.slice(-5);
-    const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
-
-    if (!fvg && !displacement) return null;
-
-    const takeProfit = crossDir === 'BULLISH'
-      ? currentPrice + slDist * 2
-      : currentPrice - slDist * 2;
-
-    const syntheticZone: SRZone = {
-      level: fastNow,
-      type: crossDir === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
-      timeframe: configService.smaxTf,
-      strength: 1,
-      candleTime: tfCandles[tfCandles.length - 1].time,
-    };
-
-    return {
-      signalType: 'SMA_X',
-      direction: crossDir,
-      entryPrice: currentPrice,
-      stopLoss,
-      takeProfit,
-      activeZone: syntheticZone,
-      momentum: { direction: crossDir, strength: 'NONE', timestamp: m5[m5.length - 1].time },
-    };
-  }
-
   private applySmaTrendFilter(signal: ZoneTradeSignal, symbol: string): ZoneTradeSignal | null {
     const period = configService.smaTrendPeriod;
     if (period <= 0) return signal;
@@ -738,7 +654,7 @@ export class Application {
   private async onZoneSignal(signal: ZoneTradeSignal): Promise<void> {
     const { direction, entryPrice, stopLoss, takeProfit, activeZone, momentum } = signal;
     const symbol = configService.symbol;
-    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : signal.signalType === 'SMA_X' ? '[SX]' : '[ZB]';
+    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
 
     logger.info(
       { direction, zone: activeZone.level, zoneTF: activeZone.timeframe, m15Momentum: momentum.strength, tag },

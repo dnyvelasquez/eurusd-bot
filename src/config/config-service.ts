@@ -50,11 +50,6 @@ interface BotConfig {
   CI_BUY_ONLY?: boolean;
   SMA_TREND_PERIOD?: number;
   SMA_TREND_TF?: 'D1' | 'H4' | 'H1';
-  ENABLE_SMAX?: boolean;
-  SMAX_FAST_PERIOD?: number;
-  SMAX_SLOW_PERIOD?: number;
-  SMAX_TF?: 'H1' | 'H4';
-  SMAX_LOOKBACK?: number;
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
@@ -108,11 +103,6 @@ class ConfigService {
   get tpRr(): number { return this.config.TP_RR ?? 2; }
   get smaTrendPeriod(): number { return this.config.SMA_TREND_PERIOD ?? 0; }
   get smaTrendTf(): 'D1' | 'H4' | 'H1' { return this.config.SMA_TREND_TF ?? 'D1'; }
-  get enableSmax(): boolean { return this.config.ENABLE_SMAX ?? false; }
-  get smaxFastPeriod(): number { return this.config.SMAX_FAST_PERIOD ?? 20; }
-  get smaxSlowPeriod(): number { return this.config.SMAX_SLOW_PERIOD ?? 50; }
-  get smaxTf(): 'H1' | 'H4' { return this.config.SMAX_TF ?? 'H1'; }
-  get smaxLookback(): number { return this.config.SMAX_LOOKBACK ?? 5; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env
   get licenseKey(): string | undefined {

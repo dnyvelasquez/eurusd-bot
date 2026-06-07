@@ -63,7 +63,7 @@ function tradeRow(t: BacktestTrade): string {
   const icon = t.result === 'WIN' ? '✓' : t.result === 'LOSS' ? '✗' : '○';
   const pnl = (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2);
   const rr = t.actualRr !== null ? t.actualRr.toFixed(2) : 'n/a';
-  const tag = t.signalType === 'EMA_PB' ? '[EP]' : t.signalType === 'SMA_X' ? '[SX]' : '[ZB]';
+  const tag = t.signalType === 'EMA_PB' ? '[EP]' : '[ZB]';
   return [
     pad(t.tradeNumber, 3, true),
     pad(t.openTimeISO, 17),
@@ -111,7 +111,6 @@ function printReport(r: BacktestReport): void {
   // Per-signal-type stats
   const zb = r.trades.filter(t => t.signalType === 'ZONE');
   const ep = r.trades.filter(t => t.signalType === 'EMA_PB');
-  const sx = r.trades.filter(t => t.signalType === 'SMA_X');
   const statLine = (label: string, ts: BacktestTrade[]) => {
     const w = ts.filter(t => t.result === 'WIN').length;
     const l = ts.filter(t => t.result === 'LOSS').length;
@@ -126,7 +125,6 @@ function printReport(r: BacktestReport): void {
   console.log(SEP);
   console.log(statLine('[ZB] Zone Bounce:     ', zb));
   console.log(statLine('[EP] EMA Pullback:    ', ep));
-  console.log(statLine('[SX] SMA Crossover:   ', sx));
   console.log(sep);
   console.log(` Total trades:          ${m.totalTrades}`);
   console.log(` Wins / Losses / Open:  ${m.wins} / ${m.losses} / ${m.openTrades}`);
@@ -187,12 +185,6 @@ async function main(): Promise<void> {
   const smaTrendPeriod      = parseInt(args['sma-trend'] ?? String(cfg['SMA_TREND_PERIOD'] ?? 0), 10);
   const smaTrendTfRaw       = args['sma-trend-tf'] ?? String(cfg['SMA_TREND_TF'] ?? 'D1');
   const smaTrendTf          = (smaTrendTfRaw === 'H4' || smaTrendTfRaw === 'H1') ? smaTrendTfRaw : ('D1' as const);
-  const enableSMAX          = (args['smax'] ?? String(cfg['ENABLE_SMAX'] ?? 'false')) === 'true';
-  const smaxFastPeriod      = parseInt(args['smax-fast'] ?? String(cfg['SMAX_FAST_PERIOD'] ?? 20), 10);
-  const smaxSlowPeriod      = parseInt(args['smax-slow'] ?? String(cfg['SMAX_SLOW_PERIOD'] ?? 50), 10);
-  const smaxTfRaw           = args['smax-tf'] ?? String(cfg['SMAX_TF'] ?? 'H1');
-  const smaxTf              = smaxTfRaw === 'H4' ? 'H4' as const : 'H1' as const;
-  const smaxLookback        = parseInt(args['smax-lookback'] ?? String(cfg['SMAX_LOOKBACK'] ?? 5), 10);
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
@@ -241,11 +233,6 @@ async function main(): Promise<void> {
     maxDailyLosses,
     smaTrendPeriod,
     smaTrendTf,
-    enableSMAX,
-    smaxFastPeriod,
-    smaxSlowPeriod,
-    smaxTf,
-    smaxLookback,
   });
 
   printReport(report);

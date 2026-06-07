@@ -54,33 +54,21 @@ class BlockedWindow(BaseModel):
 
 
 class BotSettings(BaseModel):
-    SYMBOL: str = Field(default="EURUSD")
-    MT5_TERMINAL_PATH: str = Field(default="")
-    RISK_PERCENT: float = Field(default=1.0, ge=0.1, le=10.0)
+    """Solo parámetros operativos editables desde el dashboard.
+
+    Los parámetros de estrategia/riesgo validados en los backtests (filtros,
+    señales, SL/FVG, EP, ADX, CI, trailing, BE, cooldown, horarios, guards)
+    NO se exponen aquí a propósito: viven solo en config.json y se preservan
+    al guardar (ver update_settings). Así no se puede modificar desde el panel
+    lo que ya funcionó en las pruebas.
+    """
+    RISK_PERCENT: float = Field(default=0.5, ge=0.1, le=10.0)
     LIVE_TRADING: bool = Field(default=False)
-    SIGNAL_COOLDOWN_MINUTES: int = Field(default=15, ge=1, le=1440)
-    MAX_DAILY_TRADES: int = Field(default=0, ge=0, le=50)
-    MAX_CONSEC_LOSSES: int = Field(default=0, ge=0, le=10)
-    MAX_CONSEC_LOSS_DAYS: int = Field(default=0, ge=0, le=10)
     TELEGRAM_ENABLED: bool = Field(default=True)
     LICENSE_KEY: str = Field(default="")
-    BLOCKED_HOURS: List[BlockedWindow] = Field(default_factory=lambda: [BlockedWindow(**{"from": w["from"], "to": w["to"], "label": w["label"]}) for w in DEFAULT_BLOCKED_HOURS])
-    MIN_SL_POINTS: float = Field(default=0.001, ge=0.0, le=10.0)
-    MIN_FVG_POINTS: float = Field(default=0.0002, ge=0.0, le=10.0)
-    ZONE_PROXIMITY_POINTS: float = Field(default=0.0015, ge=0.0, le=10.0)
-    ZONE_SL_BUFFER_POINTS: float = Field(default=0.0003, ge=0.0, le=1.0)
-    EMA_SPREAD_MIN: float = Field(default=0.0005, ge=0.0, le=1.0)
-    EP_M15_ALIGN: bool = Field(default=False)
-    EP_SKIP_MONDAY: bool = Field(default=False)
-    EP_MIN_HOUR: int = Field(default=0, ge=0, le=23)
-    EP_MAX_HOUR: int = Field(default=0, ge=0, le=23)
-    EP_H4_ALIGN: bool = Field(default=False)
-    EP_ADX_PERIOD: int = Field(default=14, ge=5, le=50)
-    EP_ADX_MIN: float = Field(default=0.0, ge=0.0, le=100.0)
-    BE_AT_POINTS: float = Field(default=0.0, ge=0.0, le=1.0)
-    BE_BUFFER_POINTS: float = Field(default=0.00005, ge=0.0, le=0.1)
-    PARTIAL_TP_ENABLED: bool = Field(default=False)
-    SEMI_AUTO_MODE: bool = Field(default=False)
+    MT5_TERMINAL_PATH: str = Field(default="")
+
+    model_config = {"extra": "ignore"}
 
 
 def _read_config() -> BotSettings:
@@ -96,8 +84,11 @@ def get_settings():
 
 @router.put("/settings", response_model=BotSettings)
 def update_settings(payload: BotSettings):
+    """Merge editable fields into config.json, preserving locked strategy keys."""
     try:
-        CONFIG_PATH.write_text(json.dumps(payload.model_dump(by_alias=True), indent=2), encoding="utf-8")
+        existing = json.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.exists() else {}
+        existing.update(payload.model_dump(by_alias=True, exclude_unset=True))
+        CONFIG_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return payload
