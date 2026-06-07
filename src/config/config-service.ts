@@ -18,8 +18,6 @@ interface BotConfig {
   TELEGRAM_ENABLED?: boolean;
   LICENSE_KEY?: string;
   BLOCKED_HOURS?: BlockedWindow[];
-  MAX_DAILY_PROFIT_PERCENT?: number;
-  MAX_WEEKLY_DRAWDOWN_PERCENT?: number;
   MAX_DAILY_TRADES?: number;
   MIN_FVG_POINTS?: number;
   MIN_SL_POINTS?: number;
@@ -38,7 +36,21 @@ interface BotConfig {
   EP_ADX_PERIOD?: number;
   EP_ADX_MIN?: number;
   EP_H4_ALIGN?: boolean;
+  EP_ADX_MAX?: number;
   MAX_CONSEC_LOSS_DAYS?: number;
+  MAX_DAILY_LOSSES?: number;
+  TRAIL_RR?: number;
+  ZB_ENABLED?: boolean;
+  CI_MAX?: number;
+  CI_PERIOD?: number;
+  CI_BUY_ONLY?: boolean;
+  SMA_TREND_PERIOD?: number;
+  SMA_TREND_TF?: 'D1' | 'H4' | 'H1';
+  ENABLE_SMAX?: boolean;
+  SMAX_FAST_PERIOD?: number;
+  SMAX_SLOW_PERIOD?: number;
+  SMAX_TF?: 'H1' | 'H4';
+  SMAX_LOOKBACK?: number;
 }
 
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'config.json');
@@ -77,7 +89,21 @@ class ConfigService {
   get epAdxPeriod(): number  { return this.config.EP_ADX_PERIOD ?? 14;    }
   get epAdxMin(): number     { return this.config.EP_ADX_MIN    ?? 0;     }
   get epH4Align(): boolean   { return this.config.EP_H4_ALIGN   ?? false; }
+  get epAdxMax(): number     { return this.config.EP_ADX_MAX    ?? 0;     }
   get maxConsecLossDays(): number { return this.config.MAX_CONSEC_LOSS_DAYS ?? 0; }
+  get maxDailyLosses(): number { return this.config.MAX_DAILY_LOSSES ?? 0; }
+  // Backtest parity (backtest-runner.ts): ZB gate + H4 choppiness filter
+  get zbEnabled(): boolean { return this.config.ZB_ENABLED ?? true; }
+  get ciMax(): number { return this.config.CI_MAX ?? 0; }
+  get ciPeriod(): number { return this.config.CI_PERIOD ?? 14; }
+  get ciBuyOnly(): boolean { return this.config.CI_BUY_ONLY ?? false; }
+  get smaTrendPeriod(): number { return this.config.SMA_TREND_PERIOD ?? 0; }
+  get smaTrendTf(): 'D1' | 'H4' | 'H1' { return this.config.SMA_TREND_TF ?? 'D1'; }
+  get enableSmax(): boolean { return this.config.ENABLE_SMAX ?? false; }
+  get smaxFastPeriod(): number { return this.config.SMAX_FAST_PERIOD ?? 20; }
+  get smaxSlowPeriod(): number { return this.config.SMAX_SLOW_PERIOD ?? 50; }
+  get smaxTf(): 'H1' | 'H4' { return this.config.SMAX_TF ?? 'H1'; }
+  get smaxLookback(): number { return this.config.SMAX_LOOKBACK ?? 5; }
 
   // LICENSE_KEY: config.json tiene prioridad sobre .env
   get licenseKey(): string | undefined {

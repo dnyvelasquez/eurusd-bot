@@ -46,43 +46,44 @@ Bot de trading algorítmico para EUR/USD basado en EMA Pullback. Analiza el merc
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Estrategia activa: EMA Pullback [EP]
+## Estrategias activas: Zone Bounce [ZB] + EMA Pullback [EP]
 
-El bot opera una única estrategia: **EMA Pullback** sobre EURUSDm en Exness. La señal se evalúa en cada vela M5 cerrada dentro del horario de sesión.
+El bot opera dos estrategias complementarias sobre EURUSDm. La señal se evalúa en cada vela M5 cerrada dentro del horario de sesión: ZB tiene prioridad; EP aplica si ZB no genera señal.
 
-### Lógica de entrada
+### Filtro de tendencia SMA200 D1
 
-1. **Alineación top-down H4 → H1** — `EP_H4_ALIGN=true`: EMA8 H4 debe estar al mismo lado de EMA34 que la dirección H1. Filtra entradas contratendencia en HTF.
+Antes de confirmar cualquier señal, el bot verifica que el precio esté al mismo lado de la **SMA 200 en D1** que la dirección del trade:
+- BULLISH: precio debe estar **por encima** de SMA200 D1
+- BEARISH: precio debe estar **por debajo** de SMA200 D1
 
-2. **Tendencia H1 confirmada** — EMA8 > EMA34 en H1 → BULLISH; EMA8 < EMA34 → BEARISH. La separación entre EMAs debe ser ≥ `EMA_SPREAD_MIN` (5 pips) para evitar mercados choppy.
+Configurable con `SMA_TREND_PERIOD` (200) y `SMA_TREND_TF` ("D1").
 
-3. **Régimen de mercado (Choppiness Index)** — si el CI en H4 supera `CI_MAX` (61.8), el mercado está en rango y la señal se descarta. Evita entradas en mercados sin tendencia.
+### Zone Bounce [ZB]
 
-4. **ADX moderado** — si el ADX en H4 supera `EP_ADX_MAX` (25), la tendencia está sobreextendida y la señal se descarta. El EMA Pullback funciona mejor en tendencias moderadas (ADX < 25).
+1. **Zona activa** — ZoneEngine identifica zonas S/R en D1/H4/H1/M15. El precio debe estar dentro de `ZONE_PROXIMITY_POINTS` de la zona.
+2. **Sesgo HTF multi-TF** — BiasEngine confirma dirección (BULLISH/BEARISH) en D1/H4/H1. Rechaza señales en rango (RANGE).
+3. **Alineación zona/sesgo** — BULLISH → zona de soporte; BEARISH → zona de resistencia.
+4. **Momentum M15** — MomentumEngine debe confirmar la dirección del sesgo.
+5. **Entrada M5** — requiere FVG o displacement en M5. SL más allá del nivel de zona ± buffer. TP mínimo 2:1 R:R.
 
-5. **Precio cerca de EMA34 en M15** — el precio actual debe estar dentro de `ZONE_PROXIMITY_POINTS` de la EMA34 en M15 (zona dinámica de soporte/resistencia).
+### EMA Pullback [EP]
 
-6. **MACD confirma momentum** — el histograma MACD en M15 debe estar en la dirección del trade (>0 para BULLISH, <0 para BEARISH).
+1. **Alineación top-down H4 → H1** — `EP_H4_ALIGN=true`: EMA8 H4 debe estar al mismo lado de EMA34 que la dirección H1.
 
-7. **Entrada y niveles** — el SL va más allá de la EMA34 en M15 (`ZONE_SL_BUFFER_POINTS`). El TP garantiza mínimo 2:1 R:R.
+2. **Tendencia H1 confirmada** — EMA8 > EMA34 en H1 → BULLISH; EMA8 < EMA34 → BEARISH. La separación entre EMAs debe ser ≥ `EMA_SPREAD_MIN` para evitar mercados choppy.
 
-### Estrategias adicionales (desactivadas por defecto)
+3. **Filtro ADX H4** — el ADX en H4 debe estar dentro del rango `[EP_ADX_MIN, EP_ADX_MAX]`:
+   - ADX < 20: mercado sin tendencia (rango) → señal descartada.
+   - ADX > 30: tendencia sobreextendida, alta probabilidad de reversión → señal descartada.
+   - El rango 20-30 captura mercados con tendencia real sin overextension.
 
-El backtest incluye implementaciones de estrategias experimentales que pueden activarse por CLI:
+4. **Régimen de mercado (Choppiness Index)** — si el CI en H4 supera `CI_MAX` (61.8), el mercado está en rango y la señal se descarta.
 
-| Flag | Estrategia | Descripción |
-|---|---|---|
-| `--zb true` | Zone Bounce [ZB] | Rebote en zonas HTF D1/H4/H1/M15 con sesgo multi-TF |
-| `--ec true` | EMA Cross M15 [EC] | Cruce de EMA 8/34 en M15 con confirmación H4 |
-| `--ec-h1 true` | EMA Cross H1 [EH] | Cruce de EMA 8/34 en H1 con confirmación H4 |
-| `--rt true` | Range Mean Rev [RT] | Fade de extremos M15 en mercados choppy (CI > umbral) |
-| `--sb true` | Session Breakout [SB] | Breakout del rango asiático en apertura de Londres |
-| `--fb true` | Fibo Retracement [FB] | Retroceso a niveles Fibonacci de swings H1 con confirmación de tendencia/MACD |
-| `--mo true` | Momentum [MO] | Vela de displacement M5 que rompe el extremo reciente en dirección HTF |
+5. **Precio cerca de EMA34 en M15** — el precio actual debe estar dentro de `ZONE_PROXIMITY_POINTS` de la EMA34 en M15.
 
-> Estas estrategias tienen cooldown independiente del EP y no afectan su señal. `--regime true` conmuta por régimen (Choppiness Index): habilita señales de tendencia solo en mercado direccional y `--rt` solo en rango.
->
-> **Nota:** todas fueron backtesteadas contra el EP en Feb 2025 – Jun 2026 y ninguna lo supera (pierden por sí solas o degradan su win rate). Se conservan como herramientas de investigación, desactivadas por defecto.
+5. **MACD confirma momentum** — el histograma MACD en M15 debe estar en la dirección del trade (>0 BULLISH, <0 BEARISH).
+
+7. **Entrada y niveles** — SL más allá de la EMA34 en M15 (`ZONE_SL_BUFFER_POINTS`). TP mínimo 2:1 R:R.
 
 ## Filtros de riesgo
 
@@ -308,14 +309,15 @@ Replaya velas históricas de MT5 contra la misma lógica de estrategia en vivo, 
 ### Uso
 
 ```bash
-# Recomendado: llamar tsx directamente (evita que npm intercepte los flags)
-node_modules\.bin\tsx -r tsconfig-paths/register src/backtest/index.ts 2025-02-01 2025-12-31
-
-# También funciona con npm run (las fechas se pasan como posicionales):
+# Con npm run — usar sintaxis key=value (sin doble dash) para pasar parámetros custom:
 npm run backtest -- 2025-02-01 2025-12-31
+npm run backtest -- 2025-02-01 2025-12-31 ep-adx-min=20 ep-adx-max=30 spread=0.0002
+
+# Alternativa: tsx directamente (ambas sintaxis funcionan):
+npx tsx -r tsconfig-paths/register src/backtest/index.ts --start 2025-02-01 --end 2025-12-31
 ```
 
-> **Nota sobre spread:** El parámetro `SPREAD_POINTS` en `config.json` debe estar definido explícitamente. El default interno de 0.35 es incorrecto para EURUSD (equivaldría a 3500 pips). El valor correcto para EURUSDm en Exness es `0.0001` (1 pip).
+> **Nota npm@10:** `npm run backtest -- --flag valor` no funciona porque npm interpreta los flags `--` como opciones propias y los descarta. Usar en su lugar `key=value` sin doble dash: `npm run backtest -- 2025-02-01 2025-12-31 ep-adx-min=20`
 
 ### Parámetros de backtest
 
@@ -361,14 +363,14 @@ Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIM
 
 ### Resultados de referencia (config actual)
 
-Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=0`, `RISK_PERCENT=0.5`:
+Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=2`, `RISK_PERCENT=0.5`, `SPREAD_POINTS=0.0001`:
 
 | Período | Trades | WR | PF | P&L | MaxDD | Racha |
 |---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) — *out-of-sample* | 81 | 53.8% | 1.58 | +$1,123 | 2.48% | 5 |
-| Ene–Jun 2026 (6 m) | 38 | 50.0% | 1.33 | +$327 | 3.45% | 7 |
+| Feb–Dic 2025 (11 m) | 81 | 53.8% | 1.58 | +$1,123 | 2.48% | 5 |
+| Ene–Jun 2026 (5 m) | 39 | 48.7% | 1.27 | +$275 | 3.45% | 7 |
 
-*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade). 2025 es el período out-of-sample (no usado para tunear los filtros). El archivo `backtest-EURUSDm-2025-02-01-2025-12-31.json` guarda el detalle del run de 2025.*
+*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade).*
 
 ## Parámetros de configuración
 
@@ -379,8 +381,9 @@ Todos los parámetros `*_POINTS` se expresan en **unidades de precio raw** de EU
 | Parámetro | Default | Equivalente | Descripción |
 |---|---|---|---|
 | `EP_H4_ALIGN` | `true` | — | Exige que EMA8 H4 esté alineada con la dirección H1 |
-| `EP_ADX_MAX` | `25` | — | Salta señales cuando ADX H4 > 25 (trend sobreextendido) |
-| `CI_MAX` | `61.8` | — | Salta señales cuando CI H4 > 61.8 (mercado en rango) |
+| `EP_ADX_MIN` | `0` | — | ADX H4 mínimo para señal EP (`0` = desactivado) |
+| `EP_ADX_MAX` | `25` | — | ADX H4 máximo para señal EP (> 25 = trend sobreextendido, reversión probable) |
+| `CI_MAX` | `61.8` | — | CI H4 máximo para señal EP (> 61.8 = mercado en rango choppy) |
 | `EMA_SPREAD_MIN` | `0.0005` | 5 pips | Separación mínima EMA8/34 en H1 |
 | `ZONE_PROXIMITY_POINTS` | `0.0015` | 15 pips | Proximidad al EMA34 M15 para entrada |
 | `ZONE_SL_BUFFER_POINTS` | `0.0003` | 3 pips | Buffer del SL más allá de la EMA34 |

@@ -6,8 +6,7 @@ describe('EntryValidator', () => {
 
   const validBullish = {
     htfBias: 'BULLISH' as const,
-    sweepDirection: 'BULLISH' as const,
-    mssDirection: 'BULLISH' as const,
+    m15Momentum: 'BULLISH' as const,
     hasDisplacement: true,
     hasFVG: true,
   };
@@ -16,12 +15,12 @@ describe('EntryValidator', () => {
     expect(validator.validate(validBullish)).toBe(true);
   });
 
-  it('rechaza cuando el sesgo HTF no está alineado con el MSS', () => {
+  it('rechaza cuando el sesgo HTF no está alineado con el momentum M15', () => {
     expect(validator.validate({ ...validBullish, htfBias: 'BEARISH' })).toBe(false);
   });
 
-  it('rechaza cuando la dirección del sweep no coincide con el MSS', () => {
-    expect(validator.validate({ ...validBullish, sweepDirection: 'BEARISH' })).toBe(false);
+  it('rechaza cuando el momentum M15 no coincide con el sesgo HTF', () => {
+    expect(validator.validate({ ...validBullish, m15Momentum: 'BEARISH' })).toBe(false);
   });
 
   it('rechaza cuando no hay desplazamiento', () => {
@@ -35,8 +34,7 @@ describe('EntryValidator', () => {
   it('aprueba un setup bearish válido', () => {
     expect(validator.validate({
       htfBias: 'BEARISH',
-      sweepDirection: 'BEARISH',
-      mssDirection: 'BEARISH',
+      m15Momentum: 'BEARISH',
       hasDisplacement: true,
       hasFVG: true,
     })).toBe(true);

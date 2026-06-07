@@ -10,11 +10,19 @@ function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i]?.startsWith('--') && argv[i + 1] && !argv[i + 1]!.startsWith('--')) {
-      out[argv[i]!.slice(2)] = argv[i + 1]!;
+    const arg = argv[i]!;
+    if (arg.startsWith('--') && argv[i + 1] && !argv[i + 1]!.startsWith('--')) {
+      out[arg.slice(2)] = argv[i + 1]!;
       i++;
-    } else if (argv[i] && !argv[i]!.startsWith('--')) {
-      positional.push(argv[i]!);
+    } else if (arg.startsWith('--')) {
+      // standalone flag with no value (skip)
+    } else if (arg.includes('=')) {
+      // key=value form: npm@10+ strips --flag but passes value as positional;
+      // use "key=value" (no dashes) to bypass npm flag parsing entirely.
+      const eqIdx = arg.indexOf('=');
+      out[arg.slice(0, eqIdx)] = arg.slice(eqIdx + 1);
+    } else {
+      positional.push(arg);
     }
   }
   // npm@10+ strips --start/--end as unknown config flags but passes values as positionals
@@ -55,13 +63,7 @@ function tradeRow(t: BacktestTrade): string {
   const icon = t.result === 'WIN' ? '✓' : t.result === 'LOSS' ? '✗' : '○';
   const pnl = (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2);
   const rr = t.actualRr !== null ? t.actualRr.toFixed(2) : 'n/a';
-  const tag =
-    t.signalType === 'BREAKOUT'      ? '[BP]' :
-    t.signalType === 'EMA_PB'        ? '[EP]' :
-    t.signalType === 'EMA_CROSS'     ? '[EC]' :
-    t.signalType === 'EMA_CROSS_H1'  ? '[EH]' :
-    t.signalType === 'RANGE_REV'     ? '[RT]' :
-    t.signalType === 'SESSION_BREAK' ? '[SB]' : '[ZB]';
+  const tag = t.signalType === 'EMA_PB' ? '[EP]' : t.signalType === 'SMA_X' ? '[SX]' : '[ZB]';
   return [
     pad(t.tradeNumber, 3, true),
     pad(t.openTimeISO, 17),
@@ -108,12 +110,8 @@ function printReport(r: BacktestReport): void {
 
   // Per-signal-type stats
   const zb = r.trades.filter(t => t.signalType === 'ZONE');
-  const bp = r.trades.filter(t => t.signalType === 'BREAKOUT');
   const ep = r.trades.filter(t => t.signalType === 'EMA_PB');
-  const ec  = r.trades.filter(t => t.signalType === 'EMA_CROSS');
-  const ech = r.trades.filter(t => t.signalType === 'EMA_CROSS_H1');
-  const rt  = r.trades.filter(t => t.signalType === 'RANGE_REV');
-  const sb  = r.trades.filter(t => t.signalType === 'SESSION_BREAK');
+  const sx = r.trades.filter(t => t.signalType === 'SMA_X');
   const statLine = (label: string, ts: BacktestTrade[]) => {
     const w = ts.filter(t => t.result === 'WIN').length;
     const l = ts.filter(t => t.result === 'LOSS').length;
@@ -126,13 +124,9 @@ function printReport(r: BacktestReport): void {
   console.log(SEP);
   console.log(' RESULTADOS');
   console.log(SEP);
-  console.log(statLine('[ZB] Zone Bounce:    ', zb));
-  console.log(statLine('[EP] EMA Pullback:   ', ep));
-  console.log(statLine('[EC] EMA Cross M15:  ', ec));
-  console.log(statLine('[EH] EMA Cross H1:   ', ech));
-  console.log(statLine('[RT] Range Rev:      ', rt));
-  console.log(statLine('[SB] Session Break:  ', sb));
-  console.log(statLine('[BP] Breakout+PB:    ', bp));
+  console.log(statLine('[ZB] Zone Bounce:     ', zb));
+  console.log(statLine('[EP] EMA Pullback:    ', ep));
+  console.log(statLine('[SX] SMA Crossover:   ', sx));
   console.log(sep);
   console.log(` Total trades:          ${m.totalTrades}`);
   console.log(` Wins / Losses / Open:  ${m.wins} / ${m.losses} / ${m.openTrades}`);
@@ -190,13 +184,15 @@ async function main(): Promise<void> {
   const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
   const trailRr             = parseFloat(args['trail-rr'] ?? String(cfg['TRAIL_RR'] ?? 0));
   const maxDailyLosses      = parseInt(args['max-daily-losses'] ?? String(cfg['MAX_DAILY_LOSSES'] ?? 0), 10);
-  const enableEC            = (args['ec']    ?? String(cfg['EC_ENABLED']   ?? 'false')) !== 'false';
-  const enableRT            = (args['rt']    ?? String(cfg['RT_ENABLED']   ?? 'false')) !== 'false';
-  const enableSB            = (args['sb']    ?? String(cfg['SB_ENABLED']   ?? 'false')) !== 'false';
-  const enableECH1          = (args['ec-h1'] ?? String(cfg['ECH1_ENABLED'] ?? 'false')) !== 'false';
-  const rtCiMin             = parseFloat(args['rt-ci-min'] ?? String(cfg['RT_CI_MIN'] ?? 55));
-  const rtLookback          = parseInt(args['rt-lookback'] ?? String(cfg['RT_LOOKBACK'] ?? 8), 10);
-  const sbHours             = parseInt(args['sb-hours']    ?? String(cfg['SB_HOURS']    ?? 3), 10);
+  const smaTrendPeriod      = parseInt(args['sma-trend'] ?? String(cfg['SMA_TREND_PERIOD'] ?? 0), 10);
+  const smaTrendTfRaw       = args['sma-trend-tf'] ?? String(cfg['SMA_TREND_TF'] ?? 'D1');
+  const smaTrendTf          = (smaTrendTfRaw === 'H4' || smaTrendTfRaw === 'H1') ? smaTrendTfRaw : ('D1' as const);
+  const enableSMAX          = (args['smax'] ?? String(cfg['ENABLE_SMAX'] ?? 'false')) === 'true';
+  const smaxFastPeriod      = parseInt(args['smax-fast'] ?? String(cfg['SMAX_FAST_PERIOD'] ?? 20), 10);
+  const smaxSlowPeriod      = parseInt(args['smax-slow'] ?? String(cfg['SMAX_SLOW_PERIOD'] ?? 50), 10);
+  const smaxTfRaw           = args['smax-tf'] ?? String(cfg['SMAX_TF'] ?? 'H1');
+  const smaxTf              = smaxTfRaw === 'H4' ? 'H4' as const : 'H1' as const;
+  const smaxLookback        = parseInt(args['smax-lookback'] ?? String(cfg['SMAX_LOOKBACK'] ?? 5), 10);
   if (!from || !to) {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
@@ -243,13 +239,13 @@ async function main(): Promise<void> {
     tpRr,
     trailRr,
     maxDailyLosses,
-    enableEC,
-    enableRT,
-    enableSB,
-    enableECH1,
-    rtCiMin,
-    rtLookback,
-    sbHours,
+    smaTrendPeriod,
+    smaTrendTf,
+    enableSMAX,
+    smaxFastPeriod,
+    smaxSlowPeriod,
+    smaxTf,
+    smaxLookback,
   });
 
   printReport(report);

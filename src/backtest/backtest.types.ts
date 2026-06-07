@@ -1,5 +1,5 @@
 export type TradeResult = 'WIN' | 'LOSS' | 'OPEN';
-export type SignalType = 'ZONE' | 'BREAKOUT' | 'EMA_PB' | 'EMA_CROSS' | 'RANGE_REV' | 'SESSION_BREAK' | 'EMA_CROSS_H1';
+export type SignalType = 'ZONE' | 'EMA_PB' | 'SMA_X';
 
 export interface BacktestTrade {
   tradeNumber: number;

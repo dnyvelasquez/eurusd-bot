@@ -3,16 +3,15 @@ import axios from 'axios';
 import { BiasEngine } from '@bot-core/strategy/bias/bias-engine';
 import { ZoneEngine } from '@bot-core/strategy/zones/zone-engine';
 import { MomentumEngine } from '@bot-core/strategy/momentum/momentum-engine';
-import { BreakoutEngine } from '@bot-core/strategy/breakout/breakout-engine';
 import { FVGDetector } from '@bot-core/strategy/fvg/fvg-detector';
 import { DisplacementDetector } from '@bot-core/strategy/fvg/displacement-detector';
-import { EngulfingDetector } from '@bot-core/strategy/fvg/engulfing-detector';
 import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
 import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
 import { ADXEngine } from '@bot-core/strategy/indicators/adx-engine';
 import { ChoppinessEngine } from '@bot-core/strategy/indicators/choppiness-engine';
+import { SMAEngine } from '@bot-core/strategy/indicators/sma-engine';
 import type { Candle } from '@bot-core/services/mt5/mt5.types';
 
 import type { BacktestTrade, BacktestReport, BacktestMetrics, TradeResult, SignalType } from './backtest.types';
@@ -73,13 +72,13 @@ export interface BacktestParams {
   tpRr?: number;        // TP multiplier on SL distance (default 2 = 2:1 R:R)
   trailRr?: number;     // 0=off; >0 trail SL at trailRr × slDist behind price peak
   maxDailyLosses?: number; // 0=off; >0 stop trading for the rest of the day after N losses
-  enableEC?: boolean;     // EMA 8/34 crossover on M15 as entry signal
-  enableRT?: boolean;     // Range/mean-reversion: fade M15 swing extremes when choppy
-  enableSB?: boolean;     // Session breakout: trade London/NY breakout of Asian range
-  enableECH1?: boolean;   // EMA 8/34 crossover on H1
-  rtCiMin?: number;       // CI threshold to activate RT (default 55 — choppy market)
-  rtLookback?: number;    // M15 candles to define swing high/low for RT (default 8)
-  sbHours?: number;       // Hours after session open to allow SB entries (default 3)
+  smaTrendPeriod?: number; // 0=off; >0 gate all signals by price vs SMA on smaTrendTf
+  smaTrendTf?: 'D1' | 'H4' | 'H1';
+  enableSMAX?: boolean;
+  smaxFastPeriod?: number;
+  smaxSlowPeriod?: number;
+  smaxTf?: 'H1' | 'H4';
+  smaxLookback?: number;
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -292,13 +291,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     tpRr = 2,
     trailRr = 0,
     maxDailyLosses = 0,
-    enableEC = false,
-    enableRT = false,
-    enableSB = false,
-    enableECH1 = false,
-    rtCiMin = 55,
-    rtLookback = 8,
-    sbHours = 3,
+    smaTrendPeriod = 0,
+    smaTrendTf = 'D1',
+    enableSMAX = false, smaxFastPeriod = 20, smaxSlowPeriod = 50, smaxTf = 'H1', smaxLookback = 5,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -336,9 +331,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   const biasEngine = new BiasEngine();
   const zoneEngine = new ZoneEngine();
   const momentumEngine = new MomentumEngine();
-  const breakoutEngine = new BreakoutEngine();
   const fvgDetector = new FVGDetector();
-  const engulfingDetector = new EngulfingDetector();
   const displacementDetector = new DisplacementDetector();
   const entryValidator = new EntryValidator();
   const positionSizing = new PositionSizing();
@@ -346,6 +339,7 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   const macdEngine = new MACDEngine();
   const adxEngine = new ADXEngine();
   const choppinessEngine = new ChoppinessEngine();
+  const smaEngine = new SMAEngine();
 
   // ── Signal evaluators ────────────────────────────────────────────────────────
 
@@ -401,34 +395,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     };
   }
 
-  // BP entry: engulfing candle on M5 in the direction of the trade (no FVG required).
-  function evalBPEntry(
-    direction: 'BULLISH' | 'BEARISH',
-    zoneLevel: number,
-    m5Slice: Candle[],
-    i: number,
-  ): SignalCandidate | null {
-    if (i < 1) return null;
-
-    const engulfing = engulfingDetector.findRecent(m5Slice.slice(0, i + 1), direction, 4);
-    if (!engulfing) return null;
-
-    const entryPrice = m5Slice[i]!.close;
-    const stopLoss = direction === 'BULLISH'
-      ? zoneLevel - zoneSlBufferPoints
-      : zoneLevel + zoneSlBufferPoints;
-    const slDist = Math.abs(entryPrice - stopLoss);
-    if (minSlPoints > 0 && slDist < minSlPoints) return null;
-
-    return {
-      signalType: 'BREAKOUT',
-      direction,
-      entryPrice,
-      stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
-    };
-  }
-
   function evalZoneBounce(
     d1: Candle[], h4: Candle[], h1: Candle[], m15: Candle[],
     m5All: Candle[], i: number,
@@ -452,27 +418,6 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     if (momentum.direction === 'NEUTRAL' || momentum.direction !== htfBias) return null;
 
     return evalM5Entry(htfBias, activeZone.level, m5All, i, 'ZONE');
-  }
-
-  function evalBreakoutPullback(
-    h4: Candle[], h1: Candle[], d1: Candle[], m15: Candle[],
-    m5All: Candle[], i: number,
-  ): SignalCandidate | null {
-    if (h4.length < 20 || h1.length < 20 || m15.length < 10) return null;
-    const currentPrice = m5All[i]!.close;
-
-    const flippedZones = breakoutEngine.getFlippedZones(h4, h1);
-    const pullbackZone = breakoutEngine.findPullbackZone(flippedZones, currentPrice, zoneProximityPoints);
-    if (!pullbackZone) return null;
-
-    const direction = pullbackZone.direction;
-    const htfBias = biasEngine.analyzeMultiTF(d1, h4, h1);
-    if (htfBias !== direction) return null;
-
-    const momentum = momentumEngine.analyze(m15);
-    if (momentum.direction !== direction) return null;
-
-    return evalBPEntry(direction, pullbackZone.level, m5All, i);
   }
 
   function evalEMAPullback(
@@ -520,8 +465,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       if (direction === 'BEARISH' && m15Ema8 > m15Ema34) return null;
     }
 
-    // Price must be near M15 EMA 34 (pullback zone)
     const currentPrice = m5All[i]!.close;
+
+    const slAnchor = m15Ema34;
     if (Math.abs(currentPrice - m15Ema34) > zoneProximityPoints) return null;
 
     // ADX on H4: skip if market is ranging (trend strength too low)
@@ -557,11 +503,11 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       if (direction === 'BEARISH' && cur >= prev) return null;
     }
 
-    // Entry at M5 close; SL beyond EMA 34 ± buffer
+    // Entry at M5 close; SL beyond slAnchor (M15 EMA34) ± buffer
     const entryPrice = currentPrice;
     const stopLoss = direction === 'BULLISH'
-      ? m15Ema34 - zoneSlBufferPoints
-      : m15Ema34 + zoneSlBufferPoints;
+      ? slAnchor - zoneSlBufferPoints
+      : slAnchor + zoneSlBufferPoints;
     const slDist = Math.abs(entryPrice - stopLoss);
     if (minSlPoints > 0 && slDist < minSlPoints) return null;
     if (epMinSlPoints > 0 && slDist < epMinSlPoints) return null;
@@ -575,234 +521,80 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     };
   }
 
-  function evalEMACross(
-    h4: Candle[], h1: Candle[], m15: Candle[], m5All: Candle[], i: number,
-  ): SignalCandidate | null {
-    if (m15.length < 40) return null;
+  function evalSMACrossover(h1: Candle[], h4: Candle[], m5All: Candle[], i: number): SignalCandidate | null {
+    if (!enableSMAX) return null;
+    const tfCandles = smaxTf === 'H4' ? h4 : h1;
+    if (tfCandles.length < smaxSlowPeriod + smaxLookback) return null;
 
-    const prevM15 = m15.slice(0, -1);
-    if (prevM15.length < 34) return null;
-
-    const ema8curr  = emaEngine.last(m15, 8);
-    const ema34curr = emaEngine.last(m15, 34);
-    const ema8prev  = emaEngine.last(prevM15, 8);
-    const ema34prev = emaEngine.last(prevM15, 34);
-    if (ema8curr === null || ema34curr === null || ema8prev === null || ema34prev === null) return null;
-
-    const crossUp   = ema8prev <= ema34prev && ema8curr > ema34curr;
-    const crossDown = ema8prev >= ema34prev && ema8curr < ema34curr;
-    if (!crossUp && !crossDown) return null;
-
-    const direction: 'BULLISH' | 'BEARISH' = crossUp ? 'BULLISH' : 'BEARISH';
-    const lastM15Time = m15.at(-1)!.time;
-
-    // Fire only once per M15 cross bar
-    if (lastECCrossTime.get(direction) === lastM15Time) return null;
-    lastECCrossTime.set(direction, lastM15Time);
-
-    // H4 EMA 8/34 top-down alignment
-    if (h4.length >= 34) {
-      const h4Ema8  = emaEngine.last(h4, 8);
-      const h4Ema34 = emaEngine.last(h4, 34);
-      if (h4Ema8 !== null && h4Ema34 !== null) {
-        if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
-        if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
-      }
+    let crossDir: 'BULLISH' | 'BEARISH' | null = null;
+    const len = tfCandles.length;
+    for (let k = 1; k <= smaxLookback && crossDir === null; k++) {
+      const currSlice = tfCandles.slice(0, len - k + 1);
+      const prevSlice = tfCandles.slice(0, len - k);
+      if (prevSlice.length < smaxSlowPeriod) break;
+      const fast     = smaEngine.last(currSlice, smaxFastPeriod);
+      const slow     = smaEngine.last(currSlice, smaxSlowPeriod);
+      const fastPrev = smaEngine.last(prevSlice, smaxFastPeriod);
+      const slowPrev = smaEngine.last(prevSlice, smaxSlowPeriod);
+      if (fast === null || slow === null || fastPrev === null || slowPrev === null) continue;
+      if (fastPrev <= slowPrev && fast > slow) crossDir = 'BULLISH';
+      else if (fastPrev >= slowPrev && fast < slow) crossDir = 'BEARISH';
     }
+    if (!crossDir) return null;
 
-    // ADX max: skip overextended trends
-    if (epAdxMax > 0) {
-      const adx = adxEngine.last(h4, epAdxPeriod);
-      if (adx !== null && adx > epAdxMax) return null;
-    }
-
-    // Entry at current M5 close; SL beyond M15 EMA 34 ± buffer
-    const entryPrice = m5All[i]!.close;
-    const stopLoss = direction === 'BULLISH'
-      ? ema34curr - zoneSlBufferPoints
-      : ema34curr + zoneSlBufferPoints;
-    const slDist = Math.abs(entryPrice - stopLoss);
-    if (minSlPoints > 0 && slDist < minSlPoints) return null;
-
-    return {
-      signalType: 'EMA_CROSS',
-      direction,
-      entryPrice,
-      stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
-    };
-  }
-
-  // EMA 8/34 cross on H1 — smoother trend signals
-  function evalEMACrossH1(
-    h4: Candle[], h1: Candle[], m5All: Candle[], i: number,
-  ): SignalCandidate | null {
-    if (h1.length < 40) return null;
-    const prevH1 = h1.slice(0, -1);
-    if (prevH1.length < 34) return null;
-
-    const ema8curr  = emaEngine.last(h1, 8);
-    const ema34curr = emaEngine.last(h1, 34);
-    const ema8prev  = emaEngine.last(prevH1, 8);
-    const ema34prev = emaEngine.last(prevH1, 34);
-    if (ema8curr === null || ema34curr === null || ema8prev === null || ema34prev === null) return null;
-
-    const crossUp   = ema8prev <= ema34prev && ema8curr > ema34curr;
-    const crossDown = ema8prev >= ema34prev && ema8curr < ema34curr;
-    if (!crossUp && !crossDown) return null;
-
-    const direction: 'BULLISH' | 'BEARISH' = crossUp ? 'BULLISH' : 'BEARISH';
-    const lastH1Time = h1.at(-1)!.time;
-    if (lastECH1CrossTime.get(direction) === lastH1Time) return null;
-    lastECH1CrossTime.set(direction, lastH1Time);
-
-    if (h4.length >= 34) {
-      const h4Ema8  = emaEngine.last(h4, 8);
-      const h4Ema34 = emaEngine.last(h4, 34);
-      if (h4Ema8 !== null && h4Ema34 !== null) {
-        if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
-        if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
-      }
-    }
-    if (epAdxMax > 0) {
-      const adx = adxEngine.last(h4, epAdxPeriod);
-      if (adx !== null && adx > epAdxMax) return null;
-    }
-
-    const entryPrice = m5All[i]!.close;
-    const stopLoss = direction === 'BULLISH'
-      ? ema34curr - zoneSlBufferPoints
-      : ema34curr + zoneSlBufferPoints;
-    const slDist = Math.abs(entryPrice - stopLoss);
-    if (minSlPoints > 0 && slDist < minSlPoints) return null;
-
-    return {
-      signalType: 'EMA_CROSS_H1',
-      direction,
-      entryPrice,
-      stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
-    };
-  }
-
-  // Range mean-reversion — fade M15 swing extremes in choppy markets
-  function evalRangeMeanReversion(
-    h4: Candle[], m15: Candle[], m5All: Candle[], i: number,
-  ): SignalCandidate | null {
-    if (m15.length < rtLookback + 2) return null;
-
-    // Only active in choppy/ranging markets
-    if (h4.length >= ciPeriod + 1) {
-      const ci = choppinessEngine.last(h4, ciPeriod);
-      if (ci === null || ci < rtCiMin) return null;
-    } else {
-      return null;
-    }
-
-    const window = m15.slice(-rtLookback);
-    const swingHigh = Math.max(...window.map(c => c.high));
-    const swingLow  = Math.min(...window.map(c => c.low));
-    const rangeSize = swingHigh - swingLow;
-    if (rangeSize < minSlPoints * 2) return null;
+    const fastNow = smaEngine.last(tfCandles, smaxFastPeriod);
+    const slowNow = smaEngine.last(tfCandles, smaxSlowPeriod);
+    if (fastNow === null || slowNow === null) return null;
+    if (crossDir === 'BULLISH' && fastNow <= slowNow) return null;
+    if (crossDir === 'BEARISH' && fastNow >= slowNow) return null;
 
     const currentPrice = m5All[i]!.close;
-    const nearHigh = Math.abs(currentPrice - swingHigh) <= zoneProximityPoints;
-    const nearLow  = Math.abs(currentPrice - swingLow)  <= zoneProximityPoints;
-    if (!nearHigh && !nearLow) return null;
+    if (Math.abs(currentPrice - fastNow) > zoneProximityPoints) return null;
 
-    const direction: 'BULLISH' | 'BEARISH' = nearLow ? 'BULLISH' : 'BEARISH';
-    const zoneLevel = nearLow ? swingLow : swingHigh;
-    const entryPrice = currentPrice;
-    const stopLoss = direction === 'BULLISH'
-      ? zoneLevel - zoneSlBufferPoints
-      : zoneLevel + zoneSlBufferPoints;
-    const slDist = Math.abs(entryPrice - stopLoss);
+    const stopLoss = crossDir === 'BULLISH'
+      ? slowNow - zoneSlBufferPoints
+      : slowNow + zoneSlBufferPoints;
+    const slDist = Math.abs(currentPrice - stopLoss);
     if (minSlPoints > 0 && slDist < minSlPoints) return null;
 
+    const fvgWindow = m5All.slice(Math.max(0, i - 6), i + 1);
+    let fvg = null;
+    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+      const slice = fvgWindow.slice(k - 2, k + 1);
+      fvg = crossDir === 'BULLISH' ? fvgDetector.detectBullish(slice) : fvgDetector.detectBearish(slice);
+    }
+    if (fvg && minFvgPoints > 0 && fvg.size < minFvgPoints) fvg = null;
+
+    const dispWindow = m5All.slice(Math.max(0, i - 4), i + 1);
+    const displacement = dispWindow.map(c => displacementDetector.detect(c)).find(Boolean) ?? null;
+    if (!fvg && !displacement) return null;
+
     return {
-      signalType: 'RANGE_REV',
-      direction,
-      entryPrice,
+      signalType: 'SMA_X',
+      direction: crossDir,
+      entryPrice: currentPrice,
       stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
+      takeProfit: crossDir === 'BULLISH' ? currentPrice + slDist * 2 : currentPrice - slDist * 2,
     };
   }
 
-  // Session breakout — trade London/NY open breakout of Asian range
-  function evalSessionBreakout(
-    m5All: Candle[], i: number, currentTime: number, dk: string,
-  ): SignalCandidate | null {
-    if (asianHigh === -Infinity || asianLow === Infinity) return null;
-    if (asianHigh <= asianLow) return null;
-
-    // Only within sbHours of session open
-    const etHour = parseInt(
-      new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', hour12: false })
-        .format(new Date(currentTime * 1000)), 10,
-    );
-    if (etHour >= sbHours + 3) return null; // session opens 03:00 ET
-
-    const currentPrice = m5All[i]!.close;
-    const brokeHigh = currentPrice > asianHigh;
-    const brokeLow  = currentPrice < asianLow;
-    if (!brokeHigh && !brokeLow) return null;
-
-    const direction: 'BULLISH' | 'BEARISH' = brokeHigh ? 'BULLISH' : 'BEARISH';
-
-    // Fire only once per direction per day
-    if (sbFiredToday.get(direction) === dk) return null;
-    sbFiredToday.set(direction, dk);
-
-    const entryPrice = currentPrice;
-    // SL just inside the broken level (now acts as S/R)
-    const stopLoss = direction === 'BULLISH'
-      ? asianHigh - zoneSlBufferPoints
-      : asianLow  + zoneSlBufferPoints;
-    const slDist = Math.abs(entryPrice - stopLoss);
-    if (minSlPoints > 0 && slDist < minSlPoints) return null;
-
-    return {
-      signalType: 'SESSION_BREAK',
-      direction,
-      entryPrice,
-      stopLoss,
-      takeProfit: direction === 'BULLISH' ? entryPrice + slDist * tpRr : entryPrice - slDist * tpRr,
-    };
-  }
-
-  // ── Replay state ────────────────────────────────────────────────────────────
+  // ── Replay state ──────────────────────────────────────────────────────────
   const trades: BacktestTrade[] = [];
   const lastSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastECCrossTime  = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastECSignalTime = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastECH1CrossTime  = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastECH1SignalTime = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastRTSignalTime   = new Map<'BULLISH' | 'BEARISH', number>();
-  const lastSBSignalTime   = new Map<'BULLISH' | 'BEARISH', number>();
-  const sbFiredToday       = new Map<'BULLISH' | 'BEARISH', string>();
-  let asianHigh   = -Infinity;
-  let asianLow    = Infinity;
-  let inAsianSession = false;
   const cooldownSec = cooldownMinutes * 60;
-
   let balance = initialBalance;
   let lastTradeCloseTime = 0;
-  let h1Ptr = 0;
-  let h4Ptr = 0;
-  let m15Ptr = 0;
-  let d1Ptr = 0;
+  let h1Ptr = 0; let h4Ptr = 0; let m15Ptr = 0; let d1Ptr = 0;
 
-  // ── Daily / weekly drawdown guard state ─────────────────────────────────────
   const etDay    = (ts: number) => new Date(ts * 1000).toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 10);
   const isMonday = (ts: number) => new Date(ts * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short' }) === 'Mon';
-
   let currentDayKey  = '';
   let dayRefBalance  = initialBalance;
   let consecLosses   = 0;
-  let circuitDay     = '';  // ET day when circuit breaker is active
-  let consecBadDays  = 0;  // consecutive days where circuit breaker fired
+  let circuitDay     = '';
+  let consecBadDays  = 0;
   let pauseUntilMon  = false;
-  let dailyLossCount = 0;  // total losses today (resets each day)
+  let dailyLossCount = 0;
 
   console.log(`\nReplaying ${m5Candles.length} M5 candles...`);
 
@@ -810,121 +602,91 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     const candle = m5Candles[i]!;
     const currentTime = candle.time;
 
-    // ── Advance HTF pointers ──────────────────────────────────────────────────
     while (d1Ptr < d1Candles.length && d1Candles[d1Ptr]!.time + 86400 <= currentTime) d1Ptr++;
     while (h4Ptr < h4Candles.length && h4Candles[h4Ptr]!.time + 14400 <= currentTime) h4Ptr++;
     while (h1Ptr < h1Candles.length && h1Candles[h1Ptr]!.time + 3600 <= currentTime) h1Ptr++;
     while (m15Ptr < m15Candles.length && m15Candles[m15Ptr]!.time + 900 <= currentTime) m15Ptr++;
 
-    // ── Skip conditions ─────────────────────────────────────────────────────
     if (i < WARM_UP_CANDLES) continue;
     if (currentTime < fromTimestamp) continue;
     if (currentTime <= lastTradeCloseTime) continue;
-
-    // ── Asian range tracking for Session Breakout (before session check) ─────
-    if (enableSB) {
-      const blocked = isSessionBlocked(currentTime, blockedHours) !== null;
-      if (!inAsianSession && blocked) {
-        asianHigh = candle.high; asianLow = candle.low; inAsianSession = true;
-      } else if (inAsianSession && blocked) {
-        if (candle.high > asianHigh) asianHigh = candle.high;
-        if (candle.low  < asianLow)  asianLow  = candle.low;
-      } else if (inAsianSession && !blocked) {
-        inAsianSession = false;
-      }
-    }
-
     if (isSessionBlocked(currentTime, blockedHours)) continue;
 
-    // ── Daily / weekly guard: reset reference at start of each new period ───
     const dk = etDay(currentTime);
     if (dk !== currentDayKey) {
-      // Update consecutive bad days before resetting daily state
       if (currentDayKey !== '') {
         const dayWasNegative = balance < dayRefBalance;
         if (dayWasNegative) {
           consecBadDays++;
           if (maxConsecLossDays > 0 && consecBadDays >= maxConsecLossDays) pauseUntilMon = true;
         } else {
-          consecBadDays = 0;  // profitable/breakeven day resets the streak
+          consecBadDays = 0;
         }
-
       }
-      // Monday resets the weekly pause
       if (isMonday(currentTime)) { consecBadDays = 0; pauseUntilMon = false; consecLosses = 0; }
       currentDayKey = dk;
       dayRefBalance = balance;
       circuitDay = '';
       dailyLossCount = 0;
-      sbFiredToday.clear();
-      // Pre-block day if already in losing streak (cross-day consecutive loss guard)
       if (maxConsecLosses > 0 && consecLosses >= maxConsecLosses) circuitDay = dk;
     }
     if (pauseUntilMon) continue;
     if (maxConsecLosses > 0 && circuitDay === dk) continue;
     if (maxDailyLosses > 0 && dailyLossCount >= maxDailyLosses) continue;
 
-    const d1Window = d1Candles.slice(0, d1Ptr);
-    const h4Window = h4Candles.slice(0, h4Ptr);
-    const h1Window = h1Candles.slice(0, h1Ptr);
+    const d1Window  = d1Candles.slice(0, d1Ptr);
+    const h4Window  = h4Candles.slice(0, h4Ptr);
+    const h1Window  = h1Candles.slice(0, h1Ptr);
     const m15Window = m15Candles.slice(0, m15Ptr);
 
-    // ── Choppiness regime filter ─────────────────────────────────────────────
     let ciChoppy = false;
     if (ciMax > 0 && h4Window.length >= ciPeriod + 1) {
       const ci = choppinessEngine.last(h4Window, ciPeriod);
-      if (ci !== null && ci > ciMax) ciChoppy = true;
+      ciChoppy = ci !== null && ci > ciMax;
     }
 
-    // ── Evaluar señal: ZB → EP → EC → RT → SB → ECH1 ────────────────────────
     const signal =
-      (enableZB   ? evalZoneBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
-      (enableEP   ? evalEMAPullback(h4Window, h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null) ??
-      (enableEC   ? evalEMACross(h4Window, h1Window, m15Window, m5Candles, i) : null) ??
-      (enableRT   ? evalRangeMeanReversion(h4Window, m15Window, m5Candles, i) : null) ??
-      (enableSB   ? evalSessionBreakout(m5Candles, i, currentTime, dk) : null) ??
-      (enableECH1 ? evalEMACrossH1(h4Window, h1Window, m5Candles, i) : null);
+      (enableZB ? evalZoneBounce(d1Window, h4Window, h1Window, m15Window, m5Candles, i) : null) ??
+      (enableEP ? evalEMAPullback(h4Window, h1Window, m15Window, m5Candles, i, epUseM15Align, epUseMacdSlope, candle.time) : null) ??
+      evalSMACrossover(h1Window, h4Window, m5Candles, i);
 
     if (!signal) continue;
 
-    // Skip signal based on CI regime: all signals, or only BUY
     if (ciChoppy && (!ciBuyOnly || signal.direction === 'BULLISH')) continue;
 
-    // ── D1 EMA8/EMA34 directional filter ────────────────────────────────────
     if (epD1Align && d1Window.length >= 35) {
       const d1Ema8  = emaEngine.last(d1Window, 8);
       const d1Ema34 = emaEngine.last(d1Window, 34);
       if (d1Ema8 !== null && d1Ema34 !== null) {
-        if (signal.direction === 'BULLISH' && d1Ema8 < d1Ema34) continue; // D1 bearish → skip BUY
-        if (signal.direction === 'BEARISH' && d1Ema8 > d1Ema34) continue; // D1 bullish → skip SELL
+        if (signal.direction === 'BULLISH' && d1Ema8 < d1Ema34) continue;
+        if (signal.direction === 'BEARISH' && d1Ema8 > d1Ema34) continue;
       }
     }
 
-    // ── DMI +DI/-DI directional filter ──────────────────────────────────────
     if (epDiTf) {
       const diCandles = epDiTf === 'H4' ? h4Window : d1Window;
       const di = adxEngine.lastWithDI(diCandles, epAdxPeriod);
       if (di !== null) {
-        const gap = di.pdi - di.ndi;           // positive = bullish dominant
-        if (gap < -epDiMinGap && signal.direction === 'BULLISH') continue;  // -DI leads → skip BUY
-        if (gap > epDiMinGap  && signal.direction === 'BEARISH') continue;  // +DI leads → skip SELL
+        const gap = di.pdi - di.ndi;
+        if (gap < -epDiMinGap && signal.direction === 'BULLISH') continue;
+        if (gap > epDiMinGap  && signal.direction === 'BEARISH') continue;
       }
     }
 
-    // ── Cooldown — cada estrategia tiene su propio timer ─────────────────────
-    const cooldownMap =
-      signal.signalType === 'EMA_CROSS'    ? lastECSignalTime :
-      signal.signalType === 'EMA_CROSS_H1' ? lastECH1SignalTime :
-      signal.signalType === 'RANGE_REV'    ? lastRTSignalTime :
-      signal.signalType === 'SESSION_BREAK'? lastSBSignalTime :
-      lastSignalTime;
-    const elapsed = currentTime - (cooldownMap.get(signal.direction) ?? 0);
+    if (smaTrendPeriod > 0) {
+      const smaTfC = smaTrendTf === 'D1' ? d1Window : smaTrendTf === 'H4' ? h4Window : h1Window;
+      const sma = smaEngine.last(smaTfC, smaTrendPeriod);
+      if (sma !== null) {
+        const price = m5Candles[i]!.close;
+        if (signal.direction === 'BULLISH' && price < sma) continue;
+        if (signal.direction === 'BEARISH' && price > sma) continue;
+      }
+    }
+
+    const elapsed = currentTime - (lastSignalTime.get(signal.direction) ?? 0);
     if (elapsed < cooldownSec) continue;
 
-    // ── Sizing ───────────────────────────────────────────────────────────────
     const { direction, entryPrice: signalEntry, stopLoss, takeProfit } = signal;
-    // R:R check and risk sizing use the M5 close price — same as the live bot,
-    // which validates R:R at close before placing the order at the ask.
     const sizing = positionSizing.calculate({
       accountBalance: balance,
       riskPercent,
@@ -935,13 +697,11 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       tradeTickValue: params.symbolTickValue ?? 1.0,
     });
     if (sizing.riskRewardRatio < 2) continue;
-    // Actual fill price: BUY pays ask (close + spread), SELL receives bid (close − spread)
-    const entryPrice = signalEntry + (direction === 'BULLISH' ? spreadPoints : -spreadPoints);
 
+    const entryPrice = signalEntry + (direction === 'BULLISH' ? spreadPoints : -spreadPoints);
     const volume = Math.min(MAX_VOLUME, Math.max(MIN_VOLUME, Math.round(sizing.positionSize * 10) / 10));
     const side = direction === 'BULLISH' ? ('BUY' as const) : ('SELL' as const);
 
-    // ── Simulate outcome ─────────────────────────────────────────────────────
     const outcome = simulateOutcome(
       entryPrice, stopLoss, takeProfit, side,
       m5Candles.slice(i + 1, i + 1 + MAX_LOOKAHEAD),
@@ -953,10 +713,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     );
 
     balance += outcome.pnl;
-    cooldownMap.set(direction, currentTime);
+    lastSignalTime.set(direction, currentTime);
     if (outcome.closeTime !== null) lastTradeCloseTime = outcome.closeTime;
 
-    // Update circuit breakers
     if (outcome.result === 'LOSS') {
       consecLosses++;
       dailyLossCount++;

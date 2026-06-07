@@ -16,7 +16,6 @@ import { MarketDataService } from '@bot-core/market-data/market-data.service';
 import { BiasEngine } from '@bot-core/strategy/bias/bias-engine';
 import { ZoneEngine } from '@bot-core/strategy/zones/zone-engine';
 import { MomentumEngine } from '@bot-core/strategy/momentum/momentum-engine';
-import { BreakoutEngine } from '@bot-core/strategy/breakout/breakout-engine';
 import { FVGDetector } from '@bot-core/strategy/fvg/fvg-detector';
 import { DisplacementDetector } from '@bot-core/strategy/fvg/displacement-detector';
 import { EntryValidator } from '@bot-core/strategy/entry/entry-validator';
@@ -24,7 +23,8 @@ import { PositionSizing } from '@bot-core/strategy/risk/position-sizing';
 import { EMAEngine } from '@bot-core/strategy/indicators/ema-engine';
 import { MACDEngine } from '@bot-core/strategy/indicators/macd-engine';
 import { ADXEngine } from '@bot-core/strategy/indicators/adx-engine';
-import { FiboEngine } from '@bot-core/strategy/indicators/fibo-engine';
+import { SMAEngine } from '@bot-core/strategy/indicators/sma-engine';
+import { ChoppinessEngine } from '@bot-core/strategy/indicators/choppiness-engine';
 import { ExecutionValidator } from '@bot-core/services/execution/execution-validator';
 import { MT5Executor } from '@bot-core/services/execution/mt5-executor';
 import { PositionMonitor } from '@bot-core/services/execution/position-monitor';
@@ -44,7 +44,7 @@ interface ZoneTradeSignal {
   takeProfit: number;
   activeZone: SRZone;
   momentum: MomentumSignal;
-  signalType?: 'ZONE' | 'EMA_PB' | 'FIBO';
+  signalType?: 'ZONE' | 'EMA_PB' | 'SMA_X';
 }
 
 export class Application {
@@ -55,14 +55,14 @@ export class Application {
   private readonly biasEngine = new BiasEngine();
   private readonly zoneEngine = new ZoneEngine();
   private readonly momentumEngine = new MomentumEngine();
-  private readonly breakoutEngine = new BreakoutEngine();
   private readonly fvgDetector = new FVGDetector();
   private readonly displacementDetector = new DisplacementDetector();
   private readonly entryValidator = new EntryValidator();
   private readonly emaEngine = new EMAEngine();
   private readonly macdEngine = new MACDEngine();
   private readonly adxEngine = new ADXEngine();
-  private readonly fiboEngine = new FiboEngine();
+  private readonly smaEngine = new SMAEngine();
+  private readonly choppinessEngine = new ChoppinessEngine();
   private readonly positionSizing = new PositionSizing();
   private readonly executionValidator = new ExecutionValidator();
   private readonly executor = new MT5Executor();
@@ -210,7 +210,9 @@ export class Application {
         } else if (this.pauseUntilMon) {
           logger.debug('Signal evaluation skipped — consecutive bad-days pause active until Monday');
         } else {
-          const signal = this.evaluateZoneSignal(symbol) ?? this.evaluateFiboRetracementSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol);
+          const rawSignal = this.evaluateZoneSignal(symbol) ?? this.evaluateEMAPullbackSignal(symbol) ?? this.evaluateSMACrossoverSignal(symbol);
+          const trendFiltered = rawSignal ? this.applySmaTrendFilter(rawSignal, symbol) : null;
+          const signal = trendFiltered ? this.applyChoppinessFilter(trendFiltered, symbol) : null;
           if (signal) {
             await this.onZoneSignal(signal).catch((err: unknown) =>
               logger.error(err, 'Error processing zone signal'),
@@ -319,7 +321,24 @@ export class Application {
     write(true, null);
   }
 
+  // Skip the signal when H4 choppiness exceeds CI_MAX (mirrors backtest-runner CI filter).
+  private applyChoppinessFilter(signal: ZoneTradeSignal, symbol: string): ZoneTradeSignal | null {
+    const ciMax = configService.ciMax;
+    if (ciMax <= 0) return signal;
+    const ciPeriod = configService.ciPeriod;
+    const h4 = this.marketData.getCandles(symbol, 'H4');
+    if (h4.length < ciPeriod + 1) return signal;
+    const ci = this.choppinessEngine.last(h4, ciPeriod);
+    const choppy = ci !== null && ci > ciMax;
+    if (choppy && (!configService.ciBuyOnly || signal.direction === 'BULLISH')) {
+      logger.debug({ ci, ciMax, direction: signal.direction }, 'Signal blocked by choppiness (CI) filter');
+      return null;
+    }
+    return signal;
+  }
+
   private evaluateZoneSignal(symbol: string): ZoneTradeSignal | null {
+    if (!configService.zbEnabled) return null;
     const d1 = this.marketData.getCandles(symbol, 'D1');
     const h4 = this.marketData.getCandles(symbol, 'H4');
     const h1 = this.marketData.getCandles(symbol, 'H1');
@@ -520,101 +539,6 @@ export class Application {
     }
   }
 
-  private evaluateBreakoutPullbackSignal(symbol: string): ZoneTradeSignal | null {
-    const d1 = this.marketData.getCandles(symbol, 'D1');
-    const h4 = this.marketData.getCandles(symbol, 'H4');
-    const h1 = this.marketData.getCandles(symbol, 'H1');
-    const m15 = this.marketData.getCandles(symbol, 'M15');
-    const m5 = this.marketData.getCandles(symbol, 'M5');
-
-    if (h4.length < 20 || h1.length < 20 || m15.length < 10 || m5.length < 10) return null;
-
-    const currentPrice = m5[m5.length - 1].close;
-
-    // ── 1. Zona rota reciente (pullback a nivel flipeado) ─────────────────────
-    const flippedZones = this.breakoutEngine.getFlippedZones(h4, h1);
-    const pullbackZone = this.breakoutEngine.findPullbackZone(
-      flippedZones,
-      currentPrice,
-      configService.zoneProximityPoints,
-    );
-
-    if (!pullbackZone) return null;
-
-    const direction = pullbackZone.direction;
-
-    // ── 2. Sesgo HTF confirma la dirección del breakout ───────────────────────
-    const htfBias = this.biasEngine.analyzeMultiTF(d1, h4, h1);
-    if (htfBias !== direction) return null;
-
-    // ── 3. Momentum M15 alineado ──────────────────────────────────────────────
-    const momentum = this.momentumEngine.analyze(m15);
-    if (momentum.direction !== direction) return null;
-
-    // ── 4. FVG y desplazamiento en M5 ────────────────────────────────────────
-    const fvgWindow = m5.slice(-7);
-    let fvg = null;
-    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
-      const slice = fvgWindow.slice(k - 2, k + 1);
-      fvg = direction === 'BULLISH'
-        ? this.fvgDetector.detectBullish(slice)
-        : this.fvgDetector.detectBearish(slice);
-    }
-
-    if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) return null;
-
-    const dispWindow = m5.slice(-5);
-    const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
-
-    const valid = this.entryValidator.validate({
-      htfBias: direction,
-      m15Momentum: momentum.direction,
-      hasDisplacement: !!displacement,
-      hasFVG: !!fvg,
-    });
-
-    if (!valid) {
-      logger.debug(
-        { direction, hasFVG: !!fvg, hasDisplacement: !!displacement },
-        'Breakout pullback rejected — conditions not met',
-      );
-      return null;
-    }
-
-    // ── 5. Niveles de precio ──────────────────────────────────────────────────
-    const entryPrice = m5[m5.length - 1].close;
-    const stopLoss = direction === 'BULLISH'
-      ? pullbackZone.level - configService.zoneSlBufferPoints
-      : pullbackZone.level + configService.zoneSlBufferPoints;
-
-    const slDistance = Math.abs(entryPrice - stopLoss);
-    if (configService.minSlPoints > 0 && slDistance < configService.minSlPoints) return null;
-
-    const takeProfit = direction === 'BULLISH'
-      ? entryPrice + slDistance * 2
-      : entryPrice - slDistance * 2;
-
-    logger.debug(
-      { direction, level: pullbackZone.level, tf: pullbackZone.timeframe },
-      'Breakout pullback signal detected',
-    );
-
-    return {
-      direction,
-      entryPrice,
-      stopLoss,
-      takeProfit,
-      activeZone: {
-        level: pullbackZone.level,
-        type: pullbackZone.type,
-        timeframe: pullbackZone.timeframe,
-        strength: pullbackZone.strength,
-        candleTime: pullbackZone.breakoutTime,
-      },
-      momentum,
-    };
-  }
-
   private evaluateEMAPullbackSignal(symbol: string): ZoneTradeSignal | null {
     const nowET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false }).format(new Date());
     const [weekday, hourStr] = nowET.split(', ');
@@ -658,25 +582,13 @@ export class Application {
 
     const currentPrice = m5[m5.length - 1].close;
 
-    // Fibo replace: skip EMA proximity, use nearest Fibo level as SL anchor instead
-    // Fibo filter: keep EMA proximity AND also require a nearby Fibo level
-    let slAnchor = m15Ema34;
+    const slAnchor = m15Ema34;
+    if (Math.abs(currentPrice - m15Ema34) > configService.zoneProximityPoints) return null;
 
-    if (configService.fiboReplaceEmaProx) {
-      const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
-      if (!fibo?.nearestLevel || fibo.direction !== direction) return null;
-      slAnchor = fibo.nearestLevel.price;
-    } else {
-      if (Math.abs(currentPrice - m15Ema34) > configService.zoneProximityPoints) return null;
-      if (configService.fiboFilterEmaPb) {
-        const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
-        if (!fibo?.nearestLevel || fibo.direction !== direction) return null;
-      }
-    }
-
-    if (configService.epAdxMin > 0) {
+    if (configService.epAdxMin > 0 || configService.epAdxMax > 0) {
       const adx = this.adxEngine.last(h4, configService.epAdxPeriod);
-      if (adx === null || adx < configService.epAdxMin) return null;
+      if (configService.epAdxMin > 0 && (adx === null || adx < configService.epAdxMin)) return null;
+      if (configService.epAdxMax > 0 && adx !== null && adx > configService.epAdxMax) return null;
     }
 
     const macd = this.macdEngine.analyze(m15);
@@ -715,103 +627,107 @@ export class Application {
     };
   }
 
-  private evaluateFiboRetracementSignal(symbol: string): ZoneTradeSignal | null {
-    if (!configService.fiboEnabled) return null;
+  private evaluateSMACrossoverSignal(symbol: string): ZoneTradeSignal | null {
+    if (!configService.enableSmax) return null;
 
-    const nowET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false }).format(new Date());
-    const [weekday, hourStr] = nowET.split(', ');
-    const hourNum = parseInt(hourStr ?? '0', 10);
-    if (configService.epSkipMonday && weekday === 'Mon') return null;
-    if (configService.epMinHour > 0 && hourNum < configService.epMinHour) return null;
-    if (configService.epMaxHour > 0 && hourNum >= configService.epMaxHour) return null;
+    const h1 = this.marketData.getCandles(symbol, 'H1');
+    const h4 = this.marketData.getCandles(symbol, 'H4');
+    const m5 = this.marketData.getCandles(symbol, 'M5');
 
-    const h4  = this.marketData.getCandles(symbol, 'H4');
-    const h1  = this.marketData.getCandles(symbol, 'H1');
-    const m15 = this.marketData.getCandles(symbol, 'M15');
-    const m5  = this.marketData.getCandles(symbol, 'M5');
+    const tfCandles = configService.smaxTf === 'H4' ? h4 : h1;
+    const minLen = configService.smaxSlowPeriod + configService.smaxLookback;
+    if (tfCandles.length < minLen || m5.length < 1) return null;
 
-    if (h1.length < 40 || m15.length < 40 || m5.length < 1) return null;
+    const len = tfCandles.length;
+    let crossDir: 'BULLISH' | 'BEARISH' | null = null;
 
-    const h1Ema8  = this.emaEngine.last(h1, 8);
-    const h1Ema34 = this.emaEngine.last(h1, 34);
-    if (h1Ema8 === null || h1Ema34 === null) return null;
+    for (let k = 1; k <= configService.smaxLookback && crossDir === null; k++) {
+      const currSlice = tfCandles.slice(0, len - k + 1);
+      const prevSlice = tfCandles.slice(0, len - k);
+      if (prevSlice.length < configService.smaxSlowPeriod) break;
 
-    const direction: 'BULLISH' | 'BEARISH' = h1Ema8 > h1Ema34 ? 'BULLISH' : 'BEARISH';
-    if (configService.emaSpreadMin > 0 && Math.abs(h1Ema8 - h1Ema34) < configService.emaSpreadMin) return null;
+      const fast     = this.smaEngine.last(currSlice, configService.smaxFastPeriod);
+      const slow     = this.smaEngine.last(currSlice, configService.smaxSlowPeriod);
+      const fastPrev = this.smaEngine.last(prevSlice, configService.smaxFastPeriod);
+      const slowPrev = this.smaEngine.last(prevSlice, configService.smaxSlowPeriod);
+      if (fast === null || slow === null || fastPrev === null || slowPrev === null) continue;
 
-    if (configService.epH4Align) {
-      const h4Ema8  = this.emaEngine.last(h4, 8);
-      const h4Ema34 = this.emaEngine.last(h4, 34);
-      if (h4Ema8 === null || h4Ema34 === null) return null;
-      if (direction === 'BULLISH' && h4Ema8 < h4Ema34) return null;
-      if (direction === 'BEARISH' && h4Ema8 > h4Ema34) return null;
+      if (fastPrev <= slowPrev && fast > slow) crossDir = 'BULLISH';
+      else if (fastPrev >= slowPrev && fast < slow) crossDir = 'BEARISH';
     }
+
+    if (!crossDir) return null;
+
+    const fastNow = this.smaEngine.last(tfCandles, configService.smaxFastPeriod);
+    const slowNow = this.smaEngine.last(tfCandles, configService.smaxSlowPeriod);
+    if (fastNow === null || slowNow === null) return null;
+    if (crossDir === 'BULLISH' && fastNow <= slowNow) return null;
+    if (crossDir === 'BEARISH' && fastNow >= slowNow) return null;
 
     const currentPrice = m5[m5.length - 1].close;
+    if (Math.abs(currentPrice - fastNow) > configService.zoneProximityPoints) return null;
 
-    const fibo = this.fiboEngine.analyze(h1, currentPrice, configService.fiboProximityPoints);
-    if (!fibo?.nearestLevel) return null;
-    if (fibo.direction !== direction) return null;
-
-    const macd = this.macdEngine.analyze(m15);
-    if (!macd) return null;
-    if (direction === 'BULLISH' && macd.histogram <= 0) return null;
-    if (direction === 'BEARISH' && macd.histogram >= 0) return null;
-
-    if (configService.fiboRequireFvgDisp) {
-      const fvgWindow = m5.slice(-7);
-      let fvg = null;
-      for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
-        const slice = fvgWindow.slice(k - 2, k + 1);
-        fvg = direction === 'BULLISH'
-          ? this.fvgDetector.detectBullish(slice)
-          : this.fvgDetector.detectBearish(slice);
-      }
-      if (!fvg) return null;
-      if (configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) return null;
-
-      const dispWindow = m5.slice(-5);
-      const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
-      if (!displacement) return null;
-    }
-
-    const entryPrice = currentPrice;
-    const fiboLevel  = fibo.nearestLevel.price;
-
-    const stopLoss = direction === 'BULLISH'
-      ? fiboLevel - configService.zoneSlBufferPoints
-      : fiboLevel + configService.zoneSlBufferPoints;
-
-    const slDist = Math.abs(entryPrice - stopLoss);
+    const stopLoss = crossDir === 'BULLISH'
+      ? slowNow - configService.zoneSlBufferPoints
+      : slowNow + configService.zoneSlBufferPoints;
+    const slDist = Math.abs(currentPrice - stopLoss);
     if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
 
-    const takeProfit = direction === 'BULLISH'
-      ? entryPrice + slDist * 2
-      : entryPrice - slDist * 2;
+    const fvgWindow = m5.slice(-7);
+    let fvg = null;
+    for (let k = fvgWindow.length - 1; k >= 2 && !fvg; k--) {
+      const slice = fvgWindow.slice(k - 2, k + 1);
+      fvg = crossDir === 'BULLISH'
+        ? this.fvgDetector.detectBullish(slice)
+        : this.fvgDetector.detectBearish(slice);
+    }
+    if (fvg && configService.minFvgPoints > 0 && fvg.size < configService.minFvgPoints) fvg = null;
+
+    const dispWindow = m5.slice(-5);
+    const displacement = dispWindow.map(c => this.displacementDetector.detect(c)).find(Boolean) ?? null;
+
+    if (!fvg && !displacement) return null;
+
+    const takeProfit = crossDir === 'BULLISH'
+      ? currentPrice + slDist * 2
+      : currentPrice - slDist * 2;
 
     const syntheticZone: SRZone = {
-      level: fiboLevel,
-      type: direction === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
-      timeframe: 'H1',
-      strength: fibo.nearestLevel.ratio,
-      candleTime: h1[h1.length - 1].time,
+      level: fastNow,
+      type: crossDir === 'BULLISH' ? 'SUPPORT' : 'RESISTANCE',
+      timeframe: configService.smaxTf,
+      strength: 1,
+      candleTime: tfCandles[tfCandles.length - 1].time,
     };
 
     return {
-      signalType: 'FIBO',
-      direction,
-      entryPrice,
+      signalType: 'SMA_X',
+      direction: crossDir,
+      entryPrice: currentPrice,
       stopLoss,
       takeProfit,
       activeZone: syntheticZone,
-      momentum: { direction, strength: 'NONE', timestamp: m5[m5.length - 1].time },
+      momentum: { direction: crossDir, strength: 'NONE', timestamp: m5[m5.length - 1].time },
     };
+  }
+
+  private applySmaTrendFilter(signal: ZoneTradeSignal, symbol: string): ZoneTradeSignal | null {
+    const period = configService.smaTrendPeriod;
+    if (period <= 0) return signal;
+    const tf = configService.smaTrendTf;
+    const candles = this.marketData.getCandles(symbol, tf);
+    const sma = this.smaEngine.last(candles, period);
+    if (sma === null) return signal;
+    const price = this.marketData.getCandles(symbol, 'M5').at(-1)?.close ?? 0;
+    if (signal.direction === 'BULLISH' && price < sma) return null;
+    if (signal.direction === 'BEARISH' && price > sma) return null;
+    return signal;
   }
 
   private async onZoneSignal(signal: ZoneTradeSignal): Promise<void> {
     const { direction, entryPrice, stopLoss, takeProfit, activeZone, momentum } = signal;
     const symbol = configService.symbol;
-    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : signal.signalType === 'FIBO' ? '[FB]' : '[ZB]';
+    const tag = signal.signalType === 'EMA_PB' ? '[EP]' : signal.signalType === 'SMA_X' ? '[SX]' : '[ZB]';
 
     logger.info(
       { direction, zone: activeZone.level, zoneTF: activeZone.timeframe, m15Momentum: momentum.strength, tag },
