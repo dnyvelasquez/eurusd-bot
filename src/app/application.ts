@@ -425,8 +425,8 @@ export class Application {
     }
 
     const takeProfit = htfBias === 'BULLISH'
-      ? entryPrice + slDistance * 2
-      : entryPrice - slDistance * 2;
+      ? entryPrice + slDistance * configService.tpRr
+      : entryPrice - slDistance * configService.tpRr;
 
     return { direction: htfBias, entryPrice, stopLoss, takeProfit, activeZone, momentum };
   }
@@ -540,6 +540,7 @@ export class Application {
   }
 
   private evaluateEMAPullbackSignal(symbol: string): ZoneTradeSignal | null {
+    if (!configService.epEnabled) return null;
     const nowET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false }).format(new Date());
     const [weekday, hourStr] = nowET.split(', ');
     const hourNum = parseInt(hourStr ?? '0', 10);
@@ -596,6 +597,15 @@ export class Application {
     if (direction === 'BULLISH' && macd.histogram <= 0) return null;
     if (direction === 'BEARISH' && macd.histogram >= 0) return null;
 
+    // [F2] MACD histogram must be accelerating (slope in trend direction)
+    if (configService.epMacdSlope) {
+      const slope = this.macdEngine.histogramSlope(m15);
+      if (!slope) return null;
+      const [prev, cur] = slope;
+      if (direction === 'BULLISH' && cur <= prev) return null;
+      if (direction === 'BEARISH' && cur >= prev) return null;
+    }
+
     const entryPrice = currentPrice;
     const stopLoss = direction === 'BULLISH'
       ? slAnchor - configService.zoneSlBufferPoints
@@ -603,10 +613,11 @@ export class Application {
 
     const slDist = Math.abs(entryPrice - stopLoss);
     if (configService.minSlPoints > 0 && slDist < configService.minSlPoints) return null;
+    if (configService.epMinSlPoints > 0 && slDist < configService.epMinSlPoints) return null;
 
     const takeProfit = direction === 'BULLISH'
-      ? entryPrice + slDist * 2
-      : entryPrice - slDist * 2;
+      ? entryPrice + slDist * configService.tpRr
+      : entryPrice - slDist * configService.tpRr;
 
     const syntheticZone: SRZone = {
       level: slAnchor,

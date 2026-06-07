@@ -37,6 +37,10 @@ interface BotConfig {
   EP_ADX_MIN?: number;
   EP_H4_ALIGN?: boolean;
   EP_ADX_MAX?: number;
+  EP_ENABLED?: boolean;
+  EP_MACD_SLOPE?: boolean;
+  EP_MIN_SL_POINTS?: number;
+  TP_RR?: number;
   MAX_CONSEC_LOSS_DAYS?: number;
   MAX_DAILY_LOSSES?: number;
   TRAIL_RR?: number;
@@ -97,6 +101,11 @@ class ConfigService {
   get ciMax(): number { return this.config.CI_MAX ?? 0; }
   get ciPeriod(): number { return this.config.CI_PERIOD ?? 14; }
   get ciBuyOnly(): boolean { return this.config.CI_BUY_ONLY ?? false; }
+  // Backtest parity (backtest-runner.ts): EP gate, MACD-slope filter, EP min SL, configurable TP R:R
+  get epEnabled(): boolean { return this.config.EP_ENABLED ?? true; }
+  get epMacdSlope(): boolean { return this.config.EP_MACD_SLOPE ?? false; }
+  get epMinSlPoints(): number { return this.config.EP_MIN_SL_POINTS ?? 0; }
+  get tpRr(): number { return this.config.TP_RR ?? 2; }
   get smaTrendPeriod(): number { return this.config.SMA_TREND_PERIOD ?? 0; }
   get smaTrendTf(): 'D1' | 'H4' | 'H1' { return this.config.SMA_TREND_TF ?? 'D1'; }
   get enableSmax(): boolean { return this.config.ENABLE_SMAX ?? false; }

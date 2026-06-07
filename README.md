@@ -72,10 +72,7 @@ Configurable con `SMA_TREND_PERIOD` (200) y `SMA_TREND_TF` ("D1").
 
 2. **Tendencia H1 confirmada** — EMA8 > EMA34 en H1 → BULLISH; EMA8 < EMA34 → BEARISH. La separación entre EMAs debe ser ≥ `EMA_SPREAD_MIN` para evitar mercados choppy.
 
-3. **Filtro ADX H4** — el ADX en H4 debe estar dentro del rango `[EP_ADX_MIN, EP_ADX_MAX]`:
-   - ADX < 20: mercado sin tendencia (rango) → señal descartada.
-   - ADX > 30: tendencia sobreextendida, alta probabilidad de reversión → señal descartada.
-   - El rango 20-30 captura mercados con tendencia real sin overextension.
+3. **Filtro ADX H4** — `EP_ADX_MAX` (25): si el ADX en H4 supera 25, la tendencia está sobreextendida (alta probabilidad de reversión) y la señal se descarta. `EP_ADX_MIN` (0 = desactivado) descartaría además mercados sin tendencia si se activa.
 
 4. **Régimen de mercado (Choppiness Index)** — si el CI en H4 supera `CI_MAX` (61.8), el mercado está en rango y la señal se descarta.
 
@@ -346,13 +343,14 @@ npx tsx -r tsconfig-paths/register src/backtest/index.ts --start 2025-02-01 --en
 | `--mo true` | — | Activar Momentum |
 | `--regime true` | — | Conmutar por régimen (tendencia vs rango por CI) |
 
-Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIMITY_POINTS`, `ZONE_SL_BUFFER_POINTS`, `EMA_SPREAD_MIN`, `EP_H4_ALIGN`, `EP_ADX_MAX`, `CI_MAX`, `TRAIL_RR`, `MAX_DAILY_LOSSES`, `MAX_CONSEC_LOSS_DAYS`, `BE_AT_POINTS`, `BE_BUFFER_POINTS`, `PARTIAL_TP_ENABLED` y `MAX_CONSEC_LOSSES` se leen automáticamente desde `config.json`.
+Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIMITY_POINTS`, `ZONE_SL_BUFFER_POINTS`, `EMA_SPREAD_MIN`, `EP_H4_ALIGN`, `EP_ADX_MIN`, `EP_ADX_MAX`, `CI_MAX`, `TRAIL_RR`, `ZB_ENABLED`, `SMA_TREND_PERIOD`, `SMA_TREND_TF`, `ENABLE_SMAX`, `EP_ENABLED`, `EP_MACD_SLOPE`, `EP_MIN_SL_POINTS`, `TP_RR`, `MAX_DAILY_LOSSES`, `MAX_CONSEC_LOSS_DAYS`, `BE_AT_POINTS`, `BE_BUFFER_POINTS`, `PARTIAL_TP_ENABLED` y `MAX_CONSEC_LOSSES` se leen automáticamente desde `config.json`, y **tanto el backtest como el bot en vivo los aplican con idéntica semántica** (paridad backtest↔vivo).
 
 ### Fidelidad del backtest
 
 | Aspecto | Comportamiento |
 |---|---|
-| Filtros activos | Session guard, cooldown, H4 align, ADX max, CI max, EMA spread mínimo, MACD M15 |
+| Filtros activos | Session guard, cooldown, filtro de tendencia SMA200 D1, H4 align, ADX max, CI max, EMA spread mínimo, MACD M15 |
+| Señales | ZB (Zone Bounce) con prioridad → EP (EMA Pullback) → SMA_X; cada una activable por config |
 | Circuit breakers | MAX_DAILY_LOSSES, MAX_CONSEC_LOSS_DAYS, MAX_CONSEC_LOSSES |
 | Trailing stop | Simulado barra a barra: SL avanza a trailRr × slDist detrás del precio pico |
 | Break-even | Simulado cuando `BE_AT_POINTS > 0` |
@@ -363,14 +361,14 @@ Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIM
 
 ### Resultados de referencia (config actual)
 
-Validado con `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=2`, `RISK_PERCENT=0.5`, `SPREAD_POINTS=0.0001`:
+Validado con la config de producción: `ZB_ENABLED=true`, `SMA_TREND_PERIOD=200`, `SMA_TREND_TF=D1`, `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=2`, `RISK_PERCENT=0.5`, `SPREAD_POINTS=0.0001`:
 
-| Período | Trades | WR | PF | P&L | MaxDD | Racha |
-|---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) | 81 | 53.8% | 1.58 | +$1,123 | 2.48% | 5 |
-| Ene–Jun 2026 (5 m) | 39 | 48.7% | 1.27 | +$275 | 3.45% | 7 |
+| Período | Trades | WR | PF | P&L | MaxDD | Racha | Desglose |
+|---|---|---|---|---|---|---|---|
+| Feb–Dic 2025 (11 m) | 54 | 50.0% | 1.53 | +$715 | 1.99% | 4 | EP +$692 · ZB +$23 |
+| Ene–Jun 2026 (5 m) | 26 | 53.9% | 1.65 | +$405 | 2.08% | 3 | EP +$336 · ZB +$69 |
 
-*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade).*
+*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade). El filtro de tendencia SMA200 D1 gatea ambas señales (ZB y EP) a la dirección del precio vs. la SMA200 diaria, lo que reduce el drawdown y mejora la robustez entre regímenes frente a EP-only.*
 
 ## Parámetros de configuración
 
