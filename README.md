@@ -170,7 +170,7 @@ El bridge incluye un dashboard en `http://localhost:8001` con las siguientes sec
 - **Estado del bridge** — conexión MT5 (verde / rojo)
 - **Estado del bot** — semáforo en tiempo real con razón de bloqueo
 - **Licencia** — visualizar y validar la clave de licencia
-- **Configuración** — editar símbolo, riesgo, modo live, cooldown, instancia MT5, límites de pérdida y trades, filtros de entrada, gestión de posiciones, modo semi-automático. Hot-reload sin reiniciar el bot.
+- **Configuración** — editar solo parámetros operativos: riesgo por operación, modo live, ruta del terminal MT5. La estrategia validada en backtests (señales, filtros, SL/FVG, EP, ADX, CI, trailing, BE, cooldown, horarios, guards) no es editable desde el panel — se ajusta en `config.json`. Hot-reload sin reiniciar el bot.
 - **Telegram** — configurar token y chat ID, toggle de notificaciones, botón de prueba
 - **Journal** — estadísticas (win rate, profit factor, avg R:R, P&L, rachas) + tabla de últimas 20 operaciones
 
@@ -343,14 +343,16 @@ npx tsx -r tsconfig-paths/register src/backtest/index.ts --start 2025-02-01 --en
 | `--mo true` | — | Activar Momentum |
 | `--regime true` | — | Conmutar por régimen (tendencia vs rango por CI) |
 
-Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIMITY_POINTS`, `ZONE_SL_BUFFER_POINTS`, `EMA_SPREAD_MIN`, `EP_H4_ALIGN`, `EP_ADX_MIN`, `EP_ADX_MAX`, `CI_MAX`, `TRAIL_RR`, `ZB_ENABLED`, `SMA_TREND_PERIOD`, `SMA_TREND_TF`, `ENABLE_SMAX`, `EP_ENABLED`, `EP_MACD_SLOPE`, `EP_MIN_SL_POINTS`, `TP_RR`, `MAX_DAILY_LOSSES`, `MAX_CONSEC_LOSS_DAYS`, `BE_AT_POINTS`, `BE_BUFFER_POINTS`, `PARTIAL_TP_ENABLED` y `MAX_CONSEC_LOSSES` se leen automáticamente desde `config.json`, y **tanto el backtest como el bot en vivo los aplican con idéntica semántica** (paridad backtest↔vivo).
+Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIMITY_POINTS`, `ZONE_SL_BUFFER_POINTS`, `EMA_SPREAD_MIN`, `EP_H4_ALIGN`, `EP_ADX_MIN`, `EP_ADX_MAX`, `CI_MAX`, `TRAIL_RR`, `ZB_ENABLED`, `SMA_TREND_PERIOD`, `SMA_TREND_TF`, `EP_ENABLED`, `EP_MACD_SLOPE`, `EP_MIN_SL_POINTS`, `TP_RR`, `MAX_DAILY_LOSSES`, `MAX_CONSEC_LOSS_DAYS`, `BE_AT_POINTS`, `BE_BUFFER_POINTS`, `PARTIAL_TP_ENABLED` y `MAX_CONSEC_LOSSES` se leen automáticamente desde `config.json`, y **tanto el backtest como el bot en vivo los aplican con idéntica semántica** (paridad backtest↔vivo).
+
+> **Edición:** estos parámetros de estrategia se ajustan editando `config.json` directamente. El dashboard web solo expone parámetros operativos (riesgo, live trading, Telegram, licencia, ruta MT5) — la estrategia validada en backtests no es editable desde el panel.
 
 ### Fidelidad del backtest
 
 | Aspecto | Comportamiento |
 |---|---|
 | Filtros activos | Session guard, cooldown, filtro de tendencia SMA200 D1, H4 align, ADX max, CI max, EMA spread mínimo, MACD M15 |
-| Señales | ZB (Zone Bounce) con prioridad → EP (EMA Pullback) → SMA_X; cada una activable por config |
+| Señales | ZB (Zone Bounce) con prioridad → EP (EMA Pullback); cada una activable por config |
 | Circuit breakers | MAX_DAILY_LOSSES, MAX_CONSEC_LOSS_DAYS, MAX_CONSEC_LOSSES |
 | Trailing stop | Simulado barra a barra: SL avanza a trailRr × slDist detrás del precio pico |
 | Break-even | Simulado cuando `BE_AT_POINTS > 0` |
