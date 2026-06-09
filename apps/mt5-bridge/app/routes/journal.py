@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
+SYMBOL = os.environ.get("SYMBOL", "EURUSDm")
+
 
 def _get_conn():
     db_url = os.environ.get("DATABASE_URL")
@@ -24,10 +26,11 @@ def get_trades(limit: int = 50):
                 SELECT id, ticket, symbol, side, volume, entry_price, stop_loss, take_profit,
                        planned_rr, risk_amount, opened_at, closed_at, close_price, profit, actual_rr, result
                 FROM trades
+                WHERE symbol = %s
                 ORDER BY opened_at DESC
                 LIMIT %s
                 """,
-                (min(limit, 200),),
+                (SYMBOL, min(limit, 200)),
             )
             rows = [dict(r) for r in cur.fetchall()]
         conn.close()
@@ -56,7 +59,9 @@ def get_stats():
                     COALESCE(SUM(profit)  FILTER (WHERE profit > 0 AND closed_at IS NOT NULL), 0) AS gross_profit,
                     COALESCE(ABS(SUM(profit) FILTER (WHERE profit < 0 AND closed_at IS NOT NULL)), 0) AS gross_loss
                 FROM trades
-                """
+                WHERE symbol = %s
+                """,
+                (SYMBOL,),
             )
             row = dict(cur.fetchone())
 
@@ -69,7 +74,8 @@ def get_stats():
 
             # Loss streak calculation — must run inside the same cursor context
             cur.execute(
-                "SELECT result FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at ASC"
+                "SELECT result FROM trades WHERE closed_at IS NOT NULL AND symbol = %s ORDER BY closed_at ASC",
+                (SYMBOL,),
             )
             results = [r["result"] for r in cur.fetchall()]
 
