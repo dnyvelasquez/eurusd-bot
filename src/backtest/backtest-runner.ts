@@ -17,7 +17,7 @@ import type { Candle } from '@bot-core/services/mt5/mt5.types';
 import type { BacktestTrade, BacktestReport, BacktestMetrics, TradeResult, SignalType } from './backtest.types';
 
 const BRIDGE_URL = 'http://127.0.0.1:8001/api/trading';
-const WARM_UP_DAYS = 5;
+const WARM_UP_DAYS = 30;
 const WARM_UP_CANDLES = 100;
 const MAX_LOOKAHEAD = 500;
 const MAX_VOLUME = 20.0;
