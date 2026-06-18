@@ -195,7 +195,7 @@ def validate_license(body: ValidateRequest):
         )
 
     # ── 4. Guardar en config.json ─────────────────────────────────────────────
-    cfg = _read_config().model_dump(by_alias=True)
+    cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.exists() else {}
     cfg["LICENSE_KEY"] = body.license_key
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
