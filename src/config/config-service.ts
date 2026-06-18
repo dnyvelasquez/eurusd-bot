@@ -59,7 +59,7 @@ class ConfigService {
   private watcher: fs.FSWatcher | null = null;
 
   constructor() {
-    this.config = this.loadFile() ?? this.fromEnv();
+    this.config = this.mergeWithDefaults(this.loadFile());
     this.startWatcher();
   }
 
@@ -127,6 +127,18 @@ class ConfigService {
     };
   }
 
+  private mergeWithDefaults(file: BotConfig | null): BotConfig {
+    const defaults = this.fromEnv();
+    if (!file) return defaults;
+    return {
+      ...file,
+      SYMBOL: file.SYMBOL ?? defaults.SYMBOL,
+      RISK_PERCENT: file.RISK_PERCENT ?? defaults.RISK_PERCENT,
+      LIVE_TRADING: file.LIVE_TRADING ?? defaults.LIVE_TRADING,
+      SIGNAL_COOLDOWN_MINUTES: file.SIGNAL_COOLDOWN_MINUTES ?? defaults.SIGNAL_COOLDOWN_MINUTES,
+    };
+  }
+
   private startWatcher(): void {
     if (!fs.existsSync(CONFIG_PATH)) return;
 
@@ -137,9 +149,9 @@ class ConfigService {
       debounce = setTimeout(() => {
         const loaded = this.loadFile();
         if (loaded) {
-          this.config = loaded;
+          this.config = this.mergeWithDefaults(loaded);
           logger.info(
-            { symbol: loaded.SYMBOL, risk: loaded.RISK_PERCENT, live: loaded.LIVE_TRADING },
+            { symbol: this.config.SYMBOL, risk: this.config.RISK_PERCENT, live: this.config.LIVE_TRADING },
             'Config reloaded from config.json',
           );
         }
