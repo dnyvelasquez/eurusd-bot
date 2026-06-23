@@ -78,7 +78,12 @@ export interface BacktestParams {
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
 
-async function fetchCandles(symbol: string, tf: string, from: string, to: string): Promise<Candle[]> {
+// In-process cache so a parameter sweep that calls runBacktest() many times with
+// the same symbol/date-range doesn't re-fetch identical candle data from MT5 every run.
+const candleCache = new Map<string, Candle[]>();
+const offsetCache = new Map<string, number>();
+
+async function fetchCandlesChunk(symbol: string, tf: string, from: string, to: string): Promise<Candle[]> {
   const url = `${BRIDGE_URL}/candles/${symbol}/${tf}/range`;
   const resp = await axios.get<{ success: boolean; data: Candle[]; message?: string }>(url, {
     params: { from_date: from, to_date: to },
@@ -88,6 +93,76 @@ async function fetchCandles(symbol: string, tf: string, from: string, to: string
     throw new Error(`Failed to fetch ${tf} candles: ${resp.data.message ?? 'unknown error'}`);
   }
   return resp.data.data;
+}
+
+// MT5's copy_rates_range silently returns no data for very wide ranges on
+// lower timeframes (e.g. a full year of M5) even though the history exists —
+// splitting into smaller windows and fetching sequentially works around it.
+const CHUNK_DAYS = 60;
+
+async function fetchCandles(symbol: string, tf: string, from: string, to: string): Promise<Candle[]> {
+  const cacheKey = `${symbol}|${tf}|${from}|${to}`;
+  const cached = candleCache.get(cacheKey);
+  if (cached) return cached;
+
+  const fromDate = new Date(from + 'T00:00:00Z');
+  const toDate = new Date(to + 'T00:00:00Z');
+  const totalDays = (toDate.getTime() - fromDate.getTime()) / 86_400_000;
+
+  let result: Candle[];
+  if (totalDays <= CHUNK_DAYS) {
+    result = await fetchCandlesChunk(symbol, tf, from, to);
+  } else {
+    const all: Candle[] = [];
+    let chunkStart = new Date(fromDate);
+    while (chunkStart < toDate) {
+      const chunkEnd = new Date(Math.min(chunkStart.getTime() + CHUNK_DAYS * 86_400_000, toDate.getTime()));
+      const chunk = await fetchCandlesChunk(
+        symbol,
+        tf,
+        chunkStart.toISOString().slice(0, 10),
+        chunkEnd.toISOString().slice(0, 10),
+      );
+      all.push(...chunk);
+      chunkStart = chunkEnd;
+    }
+    // Chunk boundaries overlap by one shared edge date — de-dupe by timestamp.
+    const seen = new Set<number>();
+    result = all.filter(c => (seen.has(c.time) ? false : (seen.add(c.time), true)));
+  }
+
+  candleCache.set(cacheKey, result);
+  return result;
+}
+
+// MT5's `time` field on candles/ticks is epoch seconds in the broker's *server* clock,
+// not true UTC — the live bot never touches it for timing (it uses `new Date()` /
+// system UTC instead), but the backtest replays candle.time directly into ET
+// conversions. Without correcting for the broker offset, every session/hour/weekday
+// filter (and the displayed trade times) drift by however many hours the broker
+// server clock is offset from real UTC.
+async function fetchBrokerOffsetSeconds(symbol: string): Promise<number> {
+  const cached = offsetCache.get(symbol);
+  if (cached !== undefined) return cached;
+  try {
+    const url = `${BRIDGE_URL}/tick/${symbol}`;
+    const resp = await axios.get<{ success: boolean; data?: { time: number } }>(url, { timeout: 10_000 });
+    if (!resp.data.success || !resp.data.data) return 0;
+    const nowUtc = Math.floor(Date.now() / 1000);
+    const rawOffset = resp.data.data.time - nowUtc;
+    // Round to the nearest minute to absorb request latency between reading the
+    // tick and reading the local clock; the offset itself need not be a round number.
+    const offset = Math.round(rawOffset / 60) * 60;
+    offsetCache.set(symbol, offset);
+    return offset;
+  } catch {
+    return 0;
+  }
+}
+
+function normalizeCandleTimes(candles: Candle[], offsetSeconds: number): Candle[] {
+  if (offsetSeconds === 0) return candles;
+  return candles.map(c => ({ ...c, time: c.time - offsetSeconds }));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -307,13 +382,24 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
 
   console.log(`\nFetching candles for ${symbol}  (${fetchFromStr} → ${fetchToStr})...`);
 
-  const [m5Candles, h1Candles, h4Candles, m15Candles, d1Candles] = await Promise.all([
+  const [rawM5, rawH1, rawH4, rawM15, rawD1, brokerOffsetSeconds] = await Promise.all([
     fetchCandles(symbol, 'M5', fetchFromStr, fetchToStr),
     fetchCandles(symbol, 'H1', fetchFromStr, fetchToStr),
     fetchCandles(symbol, 'H4', fetchFromStr, fetchToStr),
     fetchCandles(symbol, 'M15', fetchFromStr, fetchToStr),
     fetchCandles(symbol, 'D1', d1FetchFromStr, fetchToStr),
+    fetchBrokerOffsetSeconds(symbol),
   ]);
+
+  if (brokerOffsetSeconds !== 0) {
+    console.log(`  Broker server clock offset detected: ${(brokerOffsetSeconds / 3600).toFixed(1)}h — normalizing candle times to UTC`);
+  }
+
+  const m5Candles  = normalizeCandleTimes(rawM5, brokerOffsetSeconds);
+  const h1Candles  = normalizeCandleTimes(rawH1, brokerOffsetSeconds);
+  const h4Candles  = normalizeCandleTimes(rawH4, brokerOffsetSeconds);
+  const m15Candles = normalizeCandleTimes(rawM15, brokerOffsetSeconds);
+  const d1Candles  = normalizeCandleTimes(rawD1, brokerOffsetSeconds);
 
   console.log(`  M5:  ${m5Candles.length} candles`);
   console.log(`  M15: ${m15Candles.length} candles`);
