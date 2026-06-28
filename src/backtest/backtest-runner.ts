@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import axios from 'axios';
 
 import { BiasEngine } from '@bot-core/strategy/bias/bias-engine';
@@ -74,6 +77,16 @@ export interface BacktestParams {
   maxDailyLosses?: number; // 0=off; >0 stop trading for the rest of the day after N losses
   smaTrendPeriod?: number; // 0=off; >0 gate all signals by price vs SMA on smaTrendTf
   smaTrendTf?: 'D1' | 'H4' | 'H1';
+  frozenM5Path?: string; // when set, M5 candles are read from this frozen CSV instead of
+                          // the live bridge (FASE 2A dataset freeze).
+  frozenDir?: string;     // when set, ALL timeframes (M5/H1/H4/M15/D1) are read from
+                          // versioned CSVs under this directory instead of the live bridge
+                          // (FASE 2B full-dataset freeze). frozenM5Path takes precedence
+                          // over frozenDir for M5 specifically if both are set.
+  commissionPerLot?: number; // 0=off (default); >0 = round-turn commission in account
+                              // currency per 1.0 lot, deducted from pnl/actualRr on top of
+                              // spreadPoints. The live cost model only charges spread —
+                              // this is a sensitivity knob for FASE 2C, not a live-parity fix.
 }
 
 // ── Bridge fetch ──────────────────────────────────────────────────────────────
@@ -135,12 +148,84 @@ async function fetchCandles(symbol: string, tf: string, from: string, to: string
   return result;
 }
 
+// FASE 2A dataset freeze: read M5 candles from a versioned CSV (research/data/) instead
+// of the live bridge, so measurements are pinned to a fixed snapshot of history that
+// can't drift between runs. Same Candle shape as the bridge response.
+const frozenFileCache = new Map<string, Candle[]>();
+
+function loadFrozenCandles(filePath: string): Candle[] {
+  const cached = frozenFileCache.get(filePath);
+  if (cached) return cached;
+
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+  const candles: Candle[] = [];
+  for (let i = 1; i < lines.length; i++) { // skip header
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    const [time, open, high, low, close, tickVolume] = line.split(',');
+    candles.push({
+      time: Number(time),
+      open: Number(open),
+      high: Number(high),
+      low: Number(low),
+      close: Number(close),
+      tick_volume: Number(tickVolume),
+    });
+  }
+
+  frozenFileCache.set(filePath, candles);
+  return candles;
+}
+
+function fetchFrozenCandles(filePath: string, fromStr: string, toStr: string): Candle[] {
+  const all = loadFrozenCandles(filePath);
+  const fromEpoch = new Date(fromStr + 'T00:00:00Z').getTime() / 1000;
+  const toEpoch = new Date(toStr + 'T00:00:00Z').getTime() / 1000;
+  return all.filter(c => c.time >= fromEpoch && c.time <= toEpoch);
+}
+
+// FASE 2B: locate the versioned CSV for a given symbol/timeframe inside a frozen-dataset
+// directory. Filename convention set by scripts/freeze-dataset.ts:
+// `${symbol}-${tf}-<range>-extracted<date>.csv` (symbol/tf lowercased).
+function findFrozenFile(dir: string, symbol: string, tf: string): string {
+  const prefix = `${symbol.toLowerCase()}-${tf.toLowerCase()}-`;
+  const matches = fs.readdirSync(dir).filter(f => f.startsWith(prefix) && f.endsWith('.csv'));
+  if (matches.length === 0) {
+    throw new Error(`No frozen ${tf} file found in ${dir} (expected filename starting with "${prefix}")`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous frozen ${tf} files in ${dir}: ${matches.join(', ')} — keep only one per timeframe`);
+  }
+  return path.join(dir, matches[0]!);
+}
+
+// FASE 2B-bis: read the broker clock offset that was measured once and pinned alongside
+// the frozen candle datasets (`<symbol>-frozen-meta.json` in the frozen dir), instead of
+// re-measuring it live on every run. fetchBrokerOffsetSeconds() below re-measures it live
+// against the bridge's current tick — that's NON-deterministic: when the tick is stale
+// (e.g. market closed) but the local clock keeps advancing, the offset's round-to-nearest-
+// minute can land on either side of a minute boundary depending on exactly when the CLI
+// was invoked, shifting every candle's normalized time by ±60s between two otherwise
+// identical runs — which can move candles across session-window boundaries and change the
+// resulting trade set (observed varying 57-59 trades for the same frozen-candle control
+// range before this fix). Used only on the --frozen-dir path; the live bridge path is
+// untouched and keeps calling fetchBrokerOffsetSeconds() live as before.
+function getFrozenBrokerOffsetSeconds(frozenDir: string, symbol: string): number {
+  const metaPath = path.join(frozenDir, `${symbol.toLowerCase()}-frozen-meta.json`);
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as { brokerOffsetSeconds: number };
+  return meta.brokerOffsetSeconds;
+}
+
 // MT5's `time` field on candles/ticks is epoch seconds in the broker's *server* clock,
 // not true UTC — the live bot never touches it for timing (it uses `new Date()` /
 // system UTC instead), but the backtest replays candle.time directly into ET
 // conversions. Without correcting for the broker offset, every session/hour/weekday
 // filter (and the displayed trade times) drift by however many hours the broker
 // server clock is offset from real UTC.
+//
+// Kept as a manual re-measurement tool (e.g. to refresh a frozen-meta.json offset by hand
+// if the broker's server clock changes) — NOT used automatically on the --frozen-dir path
+// anymore, see getFrozenBrokerOffsetSeconds() above.
 async function fetchBrokerOffsetSeconds(symbol: string): Promise<number> {
   const cached = offsetCache.get(symbol);
   if (cached !== undefined) return cached;
@@ -363,6 +448,9 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
     maxDailyLosses = 0,
     smaTrendPeriod = 0,
     smaTrendTf = 'D1',
+    frozenM5Path,
+    frozenDir,
+    commissionPerLot = 0,
   } = params;
 
   const fetchFrom = new Date(from + 'T00:00:00');
@@ -380,15 +468,40 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
   d1FetchFrom.setDate(d1FetchFrom.getDate() - 365);
   const d1FetchFromStr = d1FetchFrom.toISOString().slice(0, 10);
 
-  console.log(`\nFetching candles for ${symbol}  (${fetchFromStr} → ${fetchToStr})...`);
+  // FASE 2B: resolve a frozen file path per timeframe. frozenM5Path (FASE 2A flag) takes
+  // precedence over frozenDir for M5 specifically; frozenDir covers the rest (and M5 too
+  // if frozenM5Path isn't set).
+  const m5Path = frozenM5Path ?? (frozenDir ? findFrozenFile(frozenDir, symbol, 'M5') : undefined);
+  const h1Path = frozenDir ? findFrozenFile(frozenDir, symbol, 'H1') : undefined;
+  const h4Path = frozenDir ? findFrozenFile(frozenDir, symbol, 'H4') : undefined;
+  const m15Path = frozenDir ? findFrozenFile(frozenDir, symbol, 'M15') : undefined;
+  const d1Path = frozenDir ? findFrozenFile(frozenDir, symbol, 'D1') : undefined;
+
+  if (m5Path || frozenDir) {
+    console.log(`\nFetching candles for ${symbol}  (${fetchFromStr} → ${fetchToStr})  [frozen: M5=${m5Path ?? 'live'} H1=${h1Path ?? 'live'} H4=${h4Path ?? 'live'} M15=${m15Path ?? 'live'} D1=${d1Path ?? 'live'}]...`);
+  } else {
+    console.log(`\nFetching candles for ${symbol}  (${fetchFromStr} → ${fetchToStr})...`);
+  }
 
   const [rawM5, rawH1, rawH4, rawM15, rawD1, brokerOffsetSeconds] = await Promise.all([
-    fetchCandles(symbol, 'M5', fetchFromStr, fetchToStr),
-    fetchCandles(symbol, 'H1', fetchFromStr, fetchToStr),
-    fetchCandles(symbol, 'H4', fetchFromStr, fetchToStr),
-    fetchCandles(symbol, 'M15', fetchFromStr, fetchToStr),
-    fetchCandles(symbol, 'D1', d1FetchFromStr, fetchToStr),
-    fetchBrokerOffsetSeconds(symbol),
+    m5Path
+      ? Promise.resolve(fetchFrozenCandles(m5Path, fetchFromStr, fetchToStr))
+      : fetchCandles(symbol, 'M5', fetchFromStr, fetchToStr),
+    h1Path
+      ? Promise.resolve(fetchFrozenCandles(h1Path, fetchFromStr, fetchToStr))
+      : fetchCandles(symbol, 'H1', fetchFromStr, fetchToStr),
+    h4Path
+      ? Promise.resolve(fetchFrozenCandles(h4Path, fetchFromStr, fetchToStr))
+      : fetchCandles(symbol, 'H4', fetchFromStr, fetchToStr),
+    m15Path
+      ? Promise.resolve(fetchFrozenCandles(m15Path, fetchFromStr, fetchToStr))
+      : fetchCandles(symbol, 'M15', fetchFromStr, fetchToStr),
+    d1Path
+      ? Promise.resolve(fetchFrozenCandles(d1Path, d1FetchFromStr, fetchToStr))
+      : fetchCandles(symbol, 'D1', d1FetchFromStr, fetchToStr),
+    frozenDir
+      ? Promise.resolve(getFrozenBrokerOffsetSeconds(frozenDir, symbol))
+      : fetchBrokerOffsetSeconds(symbol),
   ]);
 
   if (brokerOffsetSeconds !== 0) {
@@ -734,7 +847,13 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       trailRr,
     );
 
-    balance += outcome.pnl;
+    const commissionCost = commissionPerLot > 0 ? volume * commissionPerLot : 0;
+    const pnlAfterCommission = outcome.pnl - commissionCost;
+    const actualRrAfterCommission = outcome.actualRr !== null
+      ? outcome.actualRr - commissionCost / sizing.riskAmount
+      : null;
+
+    balance += pnlAfterCommission;
     lastSignalTime.set(direction, currentTime);
     if (outcome.closeTime !== null) lastTradeCloseTime = outcome.closeTime;
 
@@ -759,12 +878,10 @@ export async function runBacktest(params: BacktestParams): Promise<BacktestRepor
       sl: Math.round(stopLoss * 100) / 100,
       tp: Math.round(takeProfit * 100) / 100,
       plannedRr: Math.round(sizing.riskRewardRatio * 100) / 100,
-      actualRr: outcome.actualRr !== null ? Math.round(outcome.actualRr * 100) / 100 : null,
+      actualRr: actualRrAfterCommission !== null ? Math.round(actualRrAfterCommission * 100) / 100 : null,
       result: outcome.result,
-      pnl: Math.round(outcome.pnl * 100) / 100,
+      pnl: Math.round(pnlAfterCommission * 100) / 100,
     });
-
-    void volume;
   }
 
   const metrics = computeMetrics(trades, initialBalance);

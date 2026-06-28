@@ -49,6 +49,109 @@ function readConfig(): Record<string, unknown> {
   }
 }
 
+// Extracted so other scripts (e.g. the determinism regression check) can build the exact
+// same BacktestParams the CLI uses, instead of re-deriving config defaults by hand and
+// risking drift between the two.
+export function resolveBacktestParams(
+  args: Record<string, string>,
+  cfg: Record<string, unknown>,
+): Parameters<typeof runBacktest>[0] {
+  const symbol    = args['symbol']    ?? (cfg['SYMBOL'] as string | undefined)   ?? 'EURUSD';
+  const from      = args['start']    ?? args['from'];
+  const to        = args['end']      ?? args['to'];
+  const balance   = parseFloat(args['balance']   ?? '10000');
+  const risk      = parseFloat(args['risk']      ?? String(cfg['RISK_PERCENT']   ?? 1));
+  const cooldown  = parseInt(args['cooldown']    ?? String(cfg['SIGNAL_COOLDOWN_MINUTES'] ?? 30), 10);
+  const proximity    = parseFloat(args['proximity']    ?? String(cfg['ZONE_PROXIMITY_POINTS'] ?? 20));
+  const emaSpread    = parseFloat(args['ema-spread']   ?? String(cfg['EMA_SPREAD_MIN'] ?? 0));
+  const epM15Align   = (args['ep-m15-align']   ?? String(cfg['EP_M15_ALIGN']   ?? 'false')) === 'true';
+  const epMacdSlope  = (args['ep-macd-slope']  ?? String(cfg['EP_MACD_SLOPE']  ?? 'false')) === 'true';
+  const beMode       = args['be-mode'] ?? 'fixed';                        // 'fixed' | '1r'
+  const beAtRaw      = parseFloat(args['be-at-points'] ?? String(cfg['BE_AT_POINTS'] ?? 0));
+  const beAtPoints   = beMode === '1r' ? -1 : beAtRaw;
+  const partialTp    = (args['partial-tp'] ?? String(cfg['PARTIAL_TP_ENABLED'] ?? 'false')) === 'true';
+  const enableZB         = (args['zb'] ?? String(cfg['ZB_ENABLED'] ?? 'true')) !== 'false';
+  const enableEP         = (args['ep'] ?? String(cfg['EP_ENABLED'] ?? 'true')) !== 'false';
+  const epMinSlPoints    = parseFloat(args['ep-min-sl'] ?? String(cfg['EP_MIN_SL_POINTS'] ?? 0));
+  const epSkipMonday     = (args['ep-skip-monday'] ?? String(cfg['EP_SKIP_MONDAY'] ?? 'false')) === 'true';
+  const epMinHour        = parseInt(args['ep-min-hour'] ?? String(cfg['EP_MIN_HOUR'] ?? 0), 10);
+  const epMaxHour        = parseInt(args['ep-max-hour']   ?? String(cfg['EP_MAX_HOUR']   ?? 0),  10);
+  const epAdxPeriod      = parseInt(args['ep-adx-period'] ?? String(cfg['EP_ADX_PERIOD'] ?? 14), 10);
+  const epAdxMin         = parseFloat(args['ep-adx-min']    ?? String(cfg['EP_ADX_MIN']    ?? 0));
+  const epH1AdxMin       = parseFloat(args['ep-h1-adx-min'] ?? '0');
+  const epH4Align        = (args['ep-h4-align']             ?? String(cfg['EP_H4_ALIGN']   ?? 'false')) === 'true';
+  const ciPeriod         = parseInt(args['ci-period']  ?? String(cfg['CI_PERIOD'] ?? 14), 10);
+  const ciMax            = parseFloat(args['ci-max']   ?? String(cfg['CI_MAX'] ?? 0));
+  const ciBuyOnly        = (args['ci-buy-only'] ?? 'false') === 'true';
+  const maxConsecLossDays   = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
+  const epD1Align           = (args['ep-d1-align'] ?? 'false') === 'true';
+  const epDiTfRaw = args['ep-di-tf'];
+  const epDiTf    = (epDiTfRaw === 'H4' || epDiTfRaw === 'D1') ? epDiTfRaw : undefined;
+  const epDiMinGap          = parseFloat(args['ep-di-gap'] ?? '0');
+  const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
+  const epAdxMax            = parseFloat(args['ep-adx-max'] ?? String(cfg['EP_ADX_MAX'] ?? 0));
+  const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
+  const trailRr             = parseFloat(args['trail-rr'] ?? String(cfg['TRAIL_RR'] ?? 0));
+  const maxDailyLosses      = parseInt(args['max-daily-losses'] ?? String(cfg['MAX_DAILY_LOSSES'] ?? 0), 10);
+  const smaTrendPeriod      = parseInt(args['sma-trend'] ?? String(cfg['SMA_TREND_PERIOD'] ?? 0), 10);
+  const smaTrendTfRaw       = args['sma-trend-tf'] ?? String(cfg['SMA_TREND_TF'] ?? 'D1');
+  const smaTrendTf          = (smaTrendTfRaw === 'H4' || smaTrendTfRaw === 'H1') ? smaTrendTfRaw : ('D1' as const);
+
+  if (!from || !to) {
+    throw new Error('Missing --start/--end (or --from/--to)');
+  }
+
+  return {
+    symbol,
+    from,
+    to,
+    initialBalance: balance,
+    riskPercent: risk,
+    cooldownMinutes: cooldown,
+    blockedHours: (args['no-blocked-hours'] === 'true')
+      ? []
+      : (cfg['BLOCKED_HOURS'] as typeof DEFAULT_BLOCKED_HOURS | undefined) ?? DEFAULT_BLOCKED_HOURS,
+    minFvgPoints: (cfg['MIN_FVG_POINTS'] as number | undefined) ?? 0,
+    minSlPoints: (cfg['MIN_SL_POINTS'] as number | undefined) ?? 0,
+    zoneProximityPoints: proximity,
+    zoneSlBufferPoints: (cfg['ZONE_SL_BUFFER_POINTS'] as number | undefined) ?? 5,
+    emaSpreadMin: emaSpread,
+    epUseM15Align: epM15Align,
+    epUseMacdSlope: epMacdSlope,
+    maxConsecLosses:      (cfg['MAX_CONSEC_LOSSES']           as number | undefined) ?? 0,
+    beAtPoints,
+    beBuffer:   (cfg['BE_BUFFER_POINTS'] as number | undefined) ?? 0,
+    partialTpEnabled: partialTp,
+    enableZB,
+    enableEP,
+    epMinSlPoints,
+    epSkipMonday,
+    epMinHour,
+    epMaxHour,
+    epAdxPeriod,
+    epAdxMin,
+    epH1AdxMin,
+    epH4Align,
+    ciPeriod,
+    ciMax,
+    ciBuyOnly,
+    maxConsecLossDays,
+    epD1Align,
+    epDiTf,
+    epDiMinGap,
+    spreadPoints,
+    epAdxMax,
+    tpRr,
+    trailRr,
+    maxDailyLosses,
+    smaTrendPeriod,
+    smaTrendTf,
+    frozenM5Path: args['frozen-m5'],
+    frozenDir: args['frozen-dir'],
+    commissionPerLot: parseFloat(args['commission-per-lot'] ?? '0'),
+  };
+}
+
 // ── Console report ────────────────────────────────────────────────────────────
 
 const SEP = '═'.repeat(80);
@@ -145,104 +248,26 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const cfg = readConfig();
 
-  const symbol    = args['symbol']    ?? (cfg['SYMBOL'] as string | undefined)   ?? 'EURUSD';
-  const from      = args['start']    ?? args['from'];
-  const to        = args['end']      ?? args['to'];
-  const balance   = parseFloat(args['balance']   ?? '10000');
-  const risk      = parseFloat(args['risk']      ?? String(cfg['RISK_PERCENT']   ?? 1));
-  const cooldown  = parseInt(args['cooldown']    ?? String(cfg['SIGNAL_COOLDOWN_MINUTES'] ?? 30), 10);
-  const proximity    = parseFloat(args['proximity']    ?? String(cfg['ZONE_PROXIMITY_POINTS'] ?? 20));
-  const emaSpread    = parseFloat(args['ema-spread']   ?? String(cfg['EMA_SPREAD_MIN'] ?? 0));
-  const epM15Align   = (args['ep-m15-align']   ?? String(cfg['EP_M15_ALIGN']   ?? 'false')) === 'true';
-  const epMacdSlope  = (args['ep-macd-slope']  ?? String(cfg['EP_MACD_SLOPE']  ?? 'false')) === 'true';
-  const beMode       = args['be-mode'] ?? 'fixed';                        // 'fixed' | '1r'
-  const beAtRaw      = parseFloat(args['be-at-points'] ?? String(cfg['BE_AT_POINTS'] ?? 0));
-  const beAtPoints   = beMode === '1r' ? -1 : beAtRaw;
-  const partialTp    = (args['partial-tp'] ?? String(cfg['PARTIAL_TP_ENABLED'] ?? 'false')) === 'true';
-  const enableZB         = (args['zb'] ?? String(cfg['ZB_ENABLED'] ?? 'true')) !== 'false';
-  const enableEP         = (args['ep'] ?? String(cfg['EP_ENABLED'] ?? 'true')) !== 'false';
-  const epMinSlPoints    = parseFloat(args['ep-min-sl'] ?? String(cfg['EP_MIN_SL_POINTS'] ?? 0));
-  const epSkipMonday     = (args['ep-skip-monday'] ?? String(cfg['EP_SKIP_MONDAY'] ?? 'false')) === 'true';
-  const epMinHour        = parseInt(args['ep-min-hour'] ?? String(cfg['EP_MIN_HOUR'] ?? 0), 10);
-  const epMaxHour        = parseInt(args['ep-max-hour']   ?? String(cfg['EP_MAX_HOUR']   ?? 0),  10);
-  const epAdxPeriod      = parseInt(args['ep-adx-period'] ?? String(cfg['EP_ADX_PERIOD'] ?? 14), 10);
-  const epAdxMin         = parseFloat(args['ep-adx-min']    ?? String(cfg['EP_ADX_MIN']    ?? 0));
-  const epH1AdxMin       = parseFloat(args['ep-h1-adx-min'] ?? '0');
-  const epH4Align        = (args['ep-h4-align']             ?? String(cfg['EP_H4_ALIGN']   ?? 'false')) === 'true';
-  const ciPeriod         = parseInt(args['ci-period']  ?? String(cfg['CI_PERIOD'] ?? 14), 10);
-  const ciMax            = parseFloat(args['ci-max']   ?? String(cfg['CI_MAX'] ?? 0));
-  const ciBuyOnly        = (args['ci-buy-only'] ?? 'false') === 'true';
-  const maxConsecLossDays   = parseInt(args['max-consec-loss-days'] ?? String(cfg['MAX_CONSEC_LOSS_DAYS'] ?? 0), 10);
-  const epD1Align           = (args['ep-d1-align'] ?? 'false') === 'true';
-  const epDiTfRaw = args['ep-di-tf'];
-  const epDiTf    = (epDiTfRaw === 'H4' || epDiTfRaw === 'D1') ? epDiTfRaw : undefined;
-  const epDiMinGap          = parseFloat(args['ep-di-gap'] ?? '0');
-  const spreadPoints        = parseFloat(args['spread'] ?? String(cfg['SPREAD_POINTS'] ?? 0.35));
-  const epAdxMax            = parseFloat(args['ep-adx-max'] ?? String(cfg['EP_ADX_MAX'] ?? 0));
-  const tpRr                = parseFloat(args['rr'] ?? String(cfg['TP_RR'] ?? 2));
-  const trailRr             = parseFloat(args['trail-rr'] ?? String(cfg['TRAIL_RR'] ?? 0));
-  const maxDailyLosses      = parseInt(args['max-daily-losses'] ?? String(cfg['MAX_DAILY_LOSSES'] ?? 0), 10);
-  const smaTrendPeriod      = parseInt(args['sma-trend'] ?? String(cfg['SMA_TREND_PERIOD'] ?? 0), 10);
-  const smaTrendTfRaw       = args['sma-trend-tf'] ?? String(cfg['SMA_TREND_TF'] ?? 'D1');
-  const smaTrendTf          = (smaTrendTfRaw === 'H4' || smaTrendTfRaw === 'H1') ? smaTrendTfRaw : ('D1' as const);
-  if (!from || !to) {
+  let params: Parameters<typeof runBacktest>[0];
+  try {
+    params = resolveBacktestParams(args, cfg);
+  } catch {
     console.error('\nUso: npm run backtest -- --start YYYY-MM-DD --end YYYY-MM-DD [--symbol EURUSD] [--balance 10000] [--risk 1] [--cooldown 30] [--proximity 0.0015]\n');
     process.exit(1);
   }
 
-  const report = await runBacktest({
-    symbol,
-    from,
-    to,
-    initialBalance: balance,
-    riskPercent: risk,
-    cooldownMinutes: cooldown,
-    blockedHours: (cfg['BLOCKED_HOURS'] as typeof DEFAULT_BLOCKED_HOURS | undefined) ?? DEFAULT_BLOCKED_HOURS,
-    minFvgPoints: (cfg['MIN_FVG_POINTS'] as number | undefined) ?? 0,
-    minSlPoints: (cfg['MIN_SL_POINTS'] as number | undefined) ?? 0,
-    zoneProximityPoints: proximity,
-    zoneSlBufferPoints: (cfg['ZONE_SL_BUFFER_POINTS'] as number | undefined) ?? 5,
-    emaSpreadMin: emaSpread,
-    epUseM15Align: epM15Align,
-    epUseMacdSlope: epMacdSlope,
-    maxConsecLosses:      (cfg['MAX_CONSEC_LOSSES']           as number | undefined) ?? 0,
-    beAtPoints,
-    beBuffer:   (cfg['BE_BUFFER_POINTS'] as number | undefined) ?? 0,
-    partialTpEnabled: partialTp,
-    enableZB,
-    enableEP,
-    epMinSlPoints,
-    epSkipMonday,
-    epMinHour,
-    epMaxHour,
-    epAdxPeriod,
-    epAdxMin,
-    epH1AdxMin,
-    epH4Align,
-    ciPeriod,
-    ciMax,
-    ciBuyOnly,
-    maxConsecLossDays,
-    epD1Align,
-    epDiTf,
-    epDiMinGap,
-    spreadPoints,
-    epAdxMax,
-    tpRr,
-    trailRr,
-    maxDailyLosses,
-    smaTrendPeriod,
-    smaTrendTf,
-  });
+  const report = await runBacktest(params);
 
   printReport(report);
 
-  const outFile = path.resolve(process.cwd(), `backtest-${symbol}-${from}-${to}.json`);
+  const outFile = path.resolve(process.cwd(), `backtest-${params.symbol}-${params.from}-${params.to}.json`);
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2), 'utf-8');
   console.log(`Reporte guardado en: ${outFile}\n`);
 }
 
-main().catch((err: unknown) => {
-  console.error('Backtest falló:', err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error('Backtest falló:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

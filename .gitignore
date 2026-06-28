@@ -9,3 +9,9 @@ license-cache.json
 bot-status.json
 backtest-*.json
 __pycache__
+
+# FASE 2A/2B dataset freeze: CSVs crudos pesados (7MB total, regenerables vía
+# scripts/freeze-dataset.ts contra el bridge) — no se versionan. El offset + los 5
+# SHA256 de referencia SÍ se versionan (eurusdm-frozen-meta.json) para que el repo
+# conserve un rastro verificable del dataset exacto usado, aunque el CSV no viva aquí.
+research/data/*.csv

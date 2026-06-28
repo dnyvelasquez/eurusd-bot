@@ -8,6 +8,7 @@
     "build": "tsup src/main.ts --format esm,cjs --dts",
     "start": "node dist/main.js",
     "backtest": "tsx -r tsconfig-paths/register src/backtest/index.ts",
+    "backtest:check-determinism": "tsx -r tsconfig-paths/register src/backtest/check-determinism.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

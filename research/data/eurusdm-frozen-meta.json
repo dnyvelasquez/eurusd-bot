@@ -1,0 +1,17 @@
+{
+  "symbol": "EURUSDm",
+  "brokerOffsetSeconds": 0,
+  "offsetMeasurement": {
+    "method": "candle-alignment",
+    "measuredAt": "2026-06-27",
+    "detail": "Market was closed (weekend) when this was measured, so the live tick (/tick/EURUSDm) was stale and unsuitable for the usual tick-vs-Date.now() method. Instead: ALL 738 D1 candles in the frozen D1 file have epoch time % 86400 == 0 (exact UTC midnight), and ALL 8952 H1 candles in the frozen H1 file have epoch time % 3600 == 0 (exact UTC hour boundary). This is only possible if the broker server clock offset from UTC is 0 (a non-zero offset would shift bar-open epochs off the UTC boundary unless the offset were itself an exact multiple of 24h, which is not a real clock-offset scenario). Re-verify with the live tick method (fetchBrokerOffsetSeconds) once the market is open if more confidence is desired.",
+    "verifiedAgainst": ["eurusdm-d1-2024-02-18_to_2026-06-26-extracted2026-06-27.csv", "eurusdm-h1-2025-01-19_to_2026-06-26-extracted2026-06-27.csv"]
+  },
+  "datasets": {
+    "M5":  { "file": "eurusdm-m5-2025-02-17_to_2026-06-26-extracted2026-06-26.csv",  "sha256": "2ab3a8aade012f5a850f9a591d78670694e1a6a92d1a5def255757837a014b75" },
+    "H1":  { "file": "eurusdm-h1-2025-01-19_to_2026-06-26-extracted2026-06-27.csv",  "sha256": "286e71fc03bea91ef757f8fd5ab35fc1c3a12ea50e4406dc52c5ee9af2ca4088" },
+    "H4":  { "file": "eurusdm-h4-2025-01-19_to_2026-06-26-extracted2026-06-27.csv",  "sha256": "18ad5acec344af000d971f4cde36d1c3d3ba05138efc0eda7fb7c11fabb0446b" },
+    "M15": { "file": "eurusdm-m15-2025-01-19_to_2026-06-26-extracted2026-06-27.csv", "sha256": "9407d37c9ff8c006131595596146d06bfd7582cf0a0e4e82a5ea2980a2c5e584" },
+    "D1":  { "file": "eurusdm-d1-2024-02-18_to_2026-06-26-extracted2026-06-27.csv",  "sha256": "9413c55187aed308d8f6129da3e8f4451a984664d2be77f0220a72adf4fad151" }
+  }
+}
