@@ -364,16 +364,60 @@ Los parámetros `BLOCKED_HOURS`, `MIN_FVG_POINTS`, `MIN_SL_POINTS`, `ZONE_PROXIM
 | News filter | No simulado — requeriría datos históricos de noticias |
 | Warm-up | 5 días + 100 velas M5 previas a `--start` |
 
-### Resultados de referencia (config actual)
+### Resultados de referencia — validación walk-forward (2026-06-27)
 
-Validado con la config de producción: `ZB_ENABLED=true`, `SMA_TREND_PERIOD=200`, `SMA_TREND_TF=D1`, `EP_H4_ALIGN=true`, `EP_ADX_MAX=25`, `CI_MAX=61.8`, `TRAIL_RR=1.5`, `MAX_DAILY_LOSSES=2`, `MAX_CONSEC_LOSS_DAYS=2`, `RISK_PERCENT=0.5`, `SPREAD_POINTS=0.0001`:
+> ⚠️ **Los números de PF~1.6 / 54 trades que circulaban antes de esta fecha eran
+> in-sample, post-tuning sobre el mismo rango que se medía, y NO son reproducibles**
+> desde el estado actual del repo (dependían del bridge MT5 en vivo, cuyo histórico y
+> reloj cambian entre corridas — ver auditoría completa abajo). Se conservan tachados
+> únicamente como referencia histórica de lo que NO hay que volver a reportar como
+> validación:
+> ~~Feb–Dic 2025 (11m): 54 trades, WR 50.0%, PF 1.53, P&L +$715~~
+> ~~Ene–Jun 2026 (5m): 26 trades, WR 53.9%, PF 1.65, P&L +$405~~
 
-| Período | Trades | WR | PF | P&L | MaxDD | Racha | Desglose |
-|---|---|---|---|---|---|---|---|
-| Feb–Dic 2025 (11 m) | 54 | 50.0% | 1.53 | +$715 | 1.99% | 4 | EP +$692 · ZB +$23 |
-| Ene–Jun 2026 (5 m) | 26 | 53.9% | 1.65 | +$405 | 2.08% | 3 | EP +$336 · ZB +$69 |
+**ESTADO: edge presente pero NO confirmado como durable.** Lo que sigue es el resultado de
+una validación walk-forward (parámetros fijos, sin re-optimizar) — no una optimización.
 
-*Cada período es un backtest independiente desde $10,000 — Riesgo: 0.5% por trade (~$50/trade). El filtro de tendencia SMA200 D1 gatea ambas señales (ZB y EP) a la dirección del precio vs. la SMA200 diaria, lo que reduce el drawdown y mejora la robustez entre regímenes frente a EP-only.*
+**Metodología:** dataset 100% congelado — 5 temporalidades (M5/H1/H4/M15/D1) + offset de
+reloj del broker, cada una con hash SHA256 verificado antes de cada corrida, reproducible
+con `--frozen-dir research/data` (sin depender del bridge MT5 en vivo). Validado sobre 5
+ventanas OOS consecutivas y no solapadas (~99 días cada una) cubriendo todo el histórico
+real disponible (2025-02-17 → 2026-06-26, ~16.4 meses). Auditoría completa en
+[`docs/eurusd-fase2a-dataset-freeze-2026-06-26.md`](docs/eurusd-fase2a-dataset-freeze-2026-06-26.md),
+[`docs/eurusd-fase2b-full-dataset-freeze-2026-06-26.md`](docs/eurusd-fase2b-full-dataset-freeze-2026-06-26.md),
+[`docs/eurusd-fase2b-bis-offset-freeze-2026-06-27.md`](docs/eurusd-fase2b-bis-offset-freeze-2026-06-27.md) y
+[`docs/eurusd-fase2c-walkforward-2026-06-27.md`](docs/eurusd-fase2c-walkforward-2026-06-27.md).
+Resumen ejecutivo de las 5 fases: [`docs/eurusd-audit-summary-2026-06-27.md`](docs/eurusd-audit-summary-2026-06-27.md).
+
+**Resultado — Hipótesis A (config actual, CON `BLOCKED_HOURS`), agregado OOS, n=78 trades cerrados:**
+
+| Métrica | Valor |
+|---|---|
+| Media R agregada (todas las ventanas) | **+0.296R** |
+| Bootstrap P(media > 0) | **97.9%** |
+| Ventanas con expectancy positiva | 4/5 |
+| Criterios pre-registrados de "edge real" (media ≥0.15R, bootstrap ≥90%, mayoría de ventanas +) | **✅ Cumple los 3** |
+| Con comisión retail estimada ($7/lote round-turn) | +0.246R (sigue cumpliendo) |
+
+**Honestidad sobre los `BLOCKED_HOURS`:** la Hipótesis A (con blocked hours) cumple los 3
+criterios; la Hipótesis B (misma config, sin blocked hours) no los cumple (+0.119R,
+bootstrap 84.4%). Pero **la diferencia A−B no es distinguible del ruido muestral** — los
+intervalos de confianza al 95% se solapan y el test de diferencia de medias (Welch) da
+p=0.355 (no significativo). Los blocked hours quedan como **"no refutados pero NO
+probados"** — no hay evidencia estadística de que sean ellos los que causan el edge.
+
+**⚠️ Advertencia explícita — el tramo más reciente es negativo en ambas hipótesis:**
+la ventana W5 (2026-03-19 → 2026-06-26, n=14 en A) dio **−0.245R** en A y **−0.524R** en B.
+Con n=14 esto no es distinguible de varianza normal, pero tampoco se puede descartar un
+cambio de régimen reciente. Además, el edge de A está concentrado: si se excluye la mejor
+ventana (W4, +0.879R), la media de las 4 ventanas restantes cae a **+0.168R** — apenas por
+encima del umbral de 0.15 pre-registrado. **Este resultado NO está validado como durable.**
+
+**Reproducibilidad:** estos números provienen de `--frozen-dir research/data` (dataset
+congelado, no del bridge en vivo). Hash de referencia del dataset M5:
+`2ab3a8aa...` (ver `research/data/eurusdm-frozen-meta.json` para los 5 hashes completos).
+Fecha de validación: **2026-06-27**. Cualquier número que no se pueda reproducir contra ese
+hash con `--frozen-dir` debe tratarse con la misma sospecha que los números tachados arriba.
 
 ## Parámetros de configuración
 
